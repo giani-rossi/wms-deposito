@@ -16,6 +16,7 @@ import {
   RECEIVED_UNIT_TYPE_LABELS,
   POSITION_STATUS_LABELS,
   positionPrimaryLabel,
+  formatReceivedUnitHeading,
 } from "@/lib/constants";
 import type {
   ContentStatus,
@@ -44,6 +45,7 @@ import {
 export type PendingUnit = {
   id: string;
   code: string;
+  display_label: string | null;
   type: ReceivedUnitType;
   physical_quantity: number;
   available: number;
@@ -138,7 +140,9 @@ export function LocationSection({
               <TableBody>
                 {unitsToClassify.map((u) => (
                   <TableRow key={u.id}>
-                    <TableCell className="font-medium">{u.code}</TableCell>
+                    <TableCell className="font-medium">
+                      {formatReceivedUnitHeading(u)}
+                    </TableCell>
                     <TableCell>{RECEIVED_UNIT_TYPE_LABELS[u.type]}</TableCell>
                     <TableCell className="text-right">
                       {u.physical_quantity}
@@ -212,7 +216,9 @@ export function LocationSection({
               <TableBody>
                 {unitsToLocate.map((u) => (
                   <TableRow key={u.id}>
-                    <TableCell className="font-medium">{u.code}</TableCell>
+                    <TableCell className="font-medium">
+                      {formatReceivedUnitHeading(u)}
+                    </TableCell>
                     <TableCell>{RECEIVED_UNIT_TYPE_LABELS[u.type]}</TableCell>
                     <TableCell className="text-right">
                       {u.available} / {u.physical_quantity}
@@ -407,8 +413,8 @@ function LocateModal({
     <Modal
       open={unit != null}
       onClose={close}
-      title={`Ubicar ${unit.code}`}
-      description={`Tipo ${RECEIVED_UNIT_TYPE_LABELS[unit.type]} · disponible ${unit.available} de ${unit.physical_quantity}. Podés dividir en varias posiciones.`}
+      title={`Ubicar ${formatReceivedUnitHeading(unit)}`}
+      description={`Tipo ${RECEIVED_UNIT_TYPE_LABELS[unit.type]} · cantidad ${unit.physical_quantity}. Podés ubicar en una o más posiciones.`}
       footer={
         <>
           <Button

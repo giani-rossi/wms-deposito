@@ -73,7 +73,7 @@
 4. **Registrar descarga** (modal desde "Próximo paso" o Gestión): counts por tipo + flags de facturación + notas.
 5. **Generar resumen físico de descarga** (`inbound_order_discharge`, snapshot 1:1).
 6. **Generar servicios facturables**: `truck_download` (camión + por tipo) y `desconsolidation` si corresponde (idempotente).
-7. **Generar unidades recibidas** automáticamente desde la descarga (una fila por tipo, completando solo el faltante).
+7. **Generar unidades recibidas** automáticamente desde la descarga (una fila por unidad física para pallet/caja/bulto; sueltos agregados; completando solo el faltante).
 8. **Comparar declarado vs cargado** (tab Unidades recibidas): tabla por tipo con estado OK / Faltan / Sobran.
 9. **Decidir clasificación vs ubicación**: depende **solo de los flags de procesamiento** de cada unidad.
 10. **Editar procesamiento por unidad** (botón "Editar procesamiento"): marcar/desmarcar flags + notas.
@@ -91,7 +91,7 @@
 - **Zona operativa de piso**: área funcional con código controlado `FLOOR-<FUNCION>-NN` (ej. `FLOOR-INBOUND-01`). Sirve como destino lógico de etapas (ingreso, retiro, revisión, etc.).
 - **Orden de ingreso (`inbound_orders`)**: la recepción de un camión/remito de un cliente. Tiene estado, documentos, descarga, unidades, movimientos y servicios.
 - **Resumen de descarga (`inbound_order_discharge`)**: snapshot 1:1 de **cuánto se bajó del camión** por tipo. Base de facturación de la descarga. **No es stock ubicado**.
-- **Unidad recibida (`received_units`)**: la **verdad de inventario físico** que ingresó (pallet/caja/bulto/suelto). Sobre ella se decide procesamiento y ubicación.
+- **Unidad recibida (`received_units`)**: la **verdad de inventario físico** que ingresó (pallet/caja/bulto/suelto). Para pallet/caja/bulto hay **una fila por unidad física** (`physical_quantity = 1`, `display_label` ej. "Pallet 1"). Los sueltos pueden ir agregados. Sobre cada fila se carga contenido, procesamiento y ubicación.
 - **Unidad logística (`logistic_units`)**: la unidad **ubicada/trazable** dentro del depósito, creada al ubicar una unidad recibida en una posición.
 - **Movimiento (`movements`)**: registro trazable de toda operación física/lógica. Regla central: nada pasa sin movimiento.
 - **Servicio facturable (`billable_services`)**: trabajo cobrable (descarga, desconsolidación, ubicación, etc.) con cantidad/unidad/estado.
@@ -224,13 +224,17 @@ Las **acciones guiadas** de la card "Gestión de la orden" se muestran según el
 ## 9. Unidades recibidas
 
 - **Generación automática desde descarga** (`generateMissingReceivedUnits`):
-  - Una fila por tipo con `physical_quantity` = cantidad declarada.
-  - **Completa solo el faltante por tipo**: compara declarado vs lo ya cargado (suma de `physical_quantity`) y crea solo la diferencia. Nunca duplica ni elimina.
+  - **pallet / box / package**: una `received_unit` **por cada unidad física**, con `physical_quantity = 1` y `display_label` ("Pallet 1", "Caja 2", "Bulto 1", etc.).
+  - **loose_item**: una fila agregada con `physical_quantity` = cantidad faltante de sueltos (ej. 50 unidades en una sola fila).
+  - **Completa solo el faltante por tipo**: compara declarado vs lo ya cargado (suma de `physical_quantity` por tipo) y crea solo la diferencia. Nunca duplica ni elimina.
   - Posición inicial `FLOOR-INBOUND-01`, `content_status = unknown`.
   - **Los 4 flags de procesamiento nacen en `false`** (desacoplados de la descarga).
   - Cada unidad generada crea su movimiento `received_unit_created`.
-- **Edición manual**: formulario "Agregar unidad recibida" (tipo, cantidad, contenido, posición, flags, notas).
-- **`physical_quantity`**: cantidad física de esa unidad (ej. "3" cajas). Es la base del comparativo y de la disponibilidad para ubicar.
+  - **Órdenes viejas** con filas agregadas (`physical_quantity > 1`) siguen funcionando; no se migran automáticamente.
+- **Edición manual**: formulario "Agregar unidad recibida" (tipo, cantidad, etiqueta opcional, contenido, posición, flags, notas).
+- **`display_label`**: etiqueta visible para distinguir unidades (ej. "Pallet 2"). Opcional en altas manuales; se asigna automáticamente desde descarga.
+- **`physical_quantity`**: cantidad física de esa fila. En pallet/caja/bulto generados desde descarga es **1** por fila. El comparativo descarga vs cargado suma `physical_quantity` por tipo.
+- **Facturación de descarga**: sigue leyendo el resumen `inbound_order_discharge` (ej. `pallets_count = 2` → `truck_download` quantity 2 unit pallet), independiente de cuántas filas `received_units` existan.
 - **Edición de flags de procesamiento** (`updateReceivedUnitRequirementsAction`): botón "Editar procesamiento" → modal con 4 checkboxes + notas. Al guardar, la unidad se reubica sola entre "requieren clasificación" y "listas para ubicar".
 - **Si la unidad ya fue procesada** (ya generó unidades logísticas): la edición sigue **permitida** pero el modal muestra un **warning** de trazabilidad. No se bloquea (decisión de negocio para correcciones legítimas).
 

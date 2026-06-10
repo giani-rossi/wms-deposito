@@ -196,6 +196,44 @@ export const RECEIVED_UNIT_TYPE_LABELS: Record<ReceivedUnitType, string> = {
   unknown: "Desconocido",
 };
 
+/** Base singular para display_label al generar desde descarga (Pallet 1, Caja 2…). */
+export const RECEIVED_UNIT_DISPLAY_LABEL_BASE: Partial<
+  Record<ReceivedUnitType, string>
+> = {
+  pallet: "Pallet",
+  box: "Caja",
+  package: "Bulto",
+};
+
+/** Tipos que se generan como una received_unit por unidad física (qty = 1). */
+export const RECEIVED_UNIT_INDIVIDUAL_TYPES: ReceivedUnitType[] = [
+  "pallet",
+  "box",
+  "package",
+];
+
+export function buildReceivedUnitDisplayLabel(
+  type: ReceivedUnitType,
+  index: number
+): string | null {
+  const base = RECEIVED_UNIT_DISPLAY_LABEL_BASE[type];
+  if (base) return `${base} ${index}`;
+  if (type === "loose_item") return "Unidades sueltas";
+  return null;
+}
+
+/** Texto principal para mostrar una unidad (code · label). */
+export function formatReceivedUnitHeading(unit: {
+  code: string;
+  display_label?: string | null;
+  type?: ReceivedUnitType;
+}): string {
+  const label =
+    unit.display_label?.trim() ||
+    (unit.type ? RECEIVED_UNIT_TYPE_LABELS[unit.type] : null);
+  return label ? `${unit.code} · ${label}` : unit.code;
+}
+
 // --- Estados de contenido de unidad recibida ---
 export const CONTENT_STATUS_LABELS: Record<ContentStatus, string> = {
   unknown: "Desconocido",

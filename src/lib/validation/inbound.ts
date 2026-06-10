@@ -76,6 +76,14 @@ export const receivedUnitSchema = z.object({
   physical_quantity: z.coerce
     .number({ invalid_type_error: "Cantidad inválida" })
     .positive("La cantidad debe ser mayor a 0"),
+  display_label: z
+    .union([z.string(), z.null()])
+    .transform((v) => {
+      const t = (v ?? "").trim();
+      return t.length ? t : null;
+    })
+    .nullable()
+    .optional(),
   content_status: z.enum(CONTENT_STATUSES),
   current_position_id: z
     .union([z.string(), z.null()])
@@ -97,6 +105,7 @@ export function receivedUnitInputFromFormData(formData: FormData) {
   return {
     type: formData.get("type"),
     physical_quantity: formData.get("physical_quantity"),
+    display_label: formData.get("display_label"),
     content_status: formData.get("content_status"),
     current_position_id: formData.get("current_position_id"),
     requires_classification: formData.get("requires_classification") === "on",

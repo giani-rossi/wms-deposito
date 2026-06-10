@@ -32,6 +32,7 @@ import {
   positionPrimaryLabel,
   positionSelectLabel,
   isOperationalZoneCode,
+  formatReceivedUnitHeading,
 } from "@/lib/constants";
 import { RECEIVED_UNIT_TYPES } from "@/lib/validation/inbound";
 import { Input } from "@/components/ui/input";
@@ -141,6 +142,14 @@ export function ReceivedUnitsSection({
                 />
               </div>
               <div className="space-y-2">
+                <Label htmlFor="ru-label">Etiqueta (opcional)</Label>
+                <Input
+                  id="ru-label"
+                  name="display_label"
+                  placeholder="Ej. Pallet 1"
+                />
+              </div>
+              <div className="space-y-2">
                 <Label htmlFor="ru-content">Estado de contenido</Label>
                 <Select
                   id="ru-content"
@@ -233,19 +242,29 @@ export function ReceivedUnitsSection({
           <TableHeader>
             <TableRow>
               <TableHead>Código</TableHead>
+              <TableHead>Etiqueta</TableHead>
               <TableHead>Tipo</TableHead>
               <TableHead className="text-right">Cantidad</TableHead>
+              <TableHead>Contenido</TableHead>
               <TableHead>Estado contenido</TableHead>
-              <TableHead>Estado físico</TableHead>
               <TableHead>Posición</TableHead>
-              <TableHead>Flags</TableHead>
+              <TableHead>Procesamiento</TableHead>
               {staff && <TableHead className="text-right">Acciones</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
             {units.map((u) => (
               <TableRow key={u.id}>
-                <TableCell className="font-medium">{u.code}</TableCell>
+                <TableCell className="font-mono text-sm font-medium">
+                  {u.code}
+                </TableCell>
+                <TableCell>
+                  {u.display_label?.trim() ? (
+                    <span className="font-medium">{u.display_label}</span>
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )}
+                </TableCell>
                 <TableCell>{RECEIVED_UNIT_TYPE_LABELS[u.type]}</TableCell>
                 <TableCell className="text-right">
                   {Number(u.physical_quantity)}
@@ -427,7 +446,7 @@ function RequirementsModal({
     <Modal
       open={unit != null}
       onClose={close}
-      title={`Editar requisitos · ${unit.code}`}
+      title={`Editar requisitos · ${formatReceivedUnitHeading(unit)}`}
       description="Marcá si esta unidad requiere procesamiento antes de ubicarse. Si no marcás nada, queda lista para ubicar."
     >
       <form onSubmit={onSubmit} className="space-y-4">

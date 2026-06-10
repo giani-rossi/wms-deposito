@@ -240,6 +240,7 @@ export default async function OrdenIngresoFichaPage({
       return {
         id: u.id,
         code: u.code,
+        display_label: u.display_label,
         type: u.type,
         physical_quantity: Number(u.physical_quantity),
         available: Number(u.physical_quantity) - located,
@@ -451,6 +452,7 @@ export default async function OrdenIngresoFichaPage({
       units={unitRows.map((u) => ({
         id: u.id,
         code: u.code,
+        displayLabel: u.display_label,
         typeLabel: RECEIVED_UNIT_TYPE_LABELS[u.type],
         located: processedSet.has(u.id),
       }))}

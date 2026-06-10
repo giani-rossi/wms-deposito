@@ -366,6 +366,7 @@ create table received_units (
   client_id uuid not null references clients (id) on delete restrict,
   type received_unit_type not null default 'unknown',
   physical_quantity numeric not null default 1,
+  display_label text,
   content_status content_status not null default 'unknown',
   current_position_id uuid references positions (id) on delete set null,
   notes text,

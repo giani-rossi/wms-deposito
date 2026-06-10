@@ -47,6 +47,7 @@ type ContentRow = {
 type UnitItem = {
   id: string;
   code: string;
+  displayLabel: string | null;
   typeLabel: string;
   located: boolean;
 };
@@ -185,7 +186,10 @@ function UnitContentCard({
     <Card>
       <CardContent className="space-y-4 pt-6">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="font-medium">{unit.code}</span>
+          <span className="font-mono text-sm font-medium">{unit.code}</span>
+          {unit.displayLabel && (
+            <span className="font-medium">{unit.displayLabel}</span>
+          )}
           <Badge variant="secondary">{unit.typeLabel}</Badge>
           {unit.located && (
             <Badge variant="outline" className="gap-1 text-amber-700">

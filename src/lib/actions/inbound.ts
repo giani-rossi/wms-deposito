@@ -24,6 +24,8 @@ import {
 import {
   RECEIVED_TO_LOGISTIC_TYPE,
   BILLING_UNIT_BY_TYPE,
+  RECEIVED_UNIT_INDIVIDUAL_TYPES,
+  buildReceivedUnitDisplayLabel,
 } from "@/lib/constants";
 import { extractRemittanceData, OcrError } from "@/lib/ocr/openai";
 
@@ -589,10 +591,67 @@ export async function registerDownloadAction(
 }
 
 /**
- * Crea las unidades recibidas que faltan según el resumen de descarga,
- * comparando por tipo contra lo ya cargado (convención: una fila por tipo con
- * physical_quantity = cantidad de bultos). No elimina ni duplica: solo agrega
- * el faltante. Hereda los flags del resumen.
+ * Inserta una unidad recibida + movimiento de creación.
+ */
+async function insertReceivedUnitFromDischarge(
+  supabase: ReturnType<typeof createClient>,
+  params: {
+    orderId: string;
+    clientId: string;
+    userId: string;
+    floorId: string | null;
+    type: ReceivedUnitType;
+    physical_quantity: number;
+    display_label: string | null;
+  }
+): Promise<void> {
+  const { orderId, clientId, userId, floorId, type, physical_quantity, display_label } =
+    params;
+
+  const { data: code } = await supabase.rpc("next_received_unit_code");
+  if (!code) return;
+
+  const { data: unit } = await supabase
+    .from("received_units")
+    .insert({
+      code,
+      inbound_order_id: orderId,
+      client_id: clientId,
+      type,
+      physical_quantity,
+      display_label,
+      content_status: "unknown",
+      current_position_id: floorId,
+      // Las unidades nacen SIN requisitos de procesamiento: los flags de la
+      // descarga son solo para facturación/resumen, no se heredan.
+      requires_classification: false,
+      requires_desconsolidation: false,
+      requires_assembly: false,
+      requires_repackaging: false,
+      notes: "Generada desde el resumen de descarga",
+    })
+    .select("id")
+    .single();
+  if (!unit) return;
+
+  const labelNote = display_label ? ` (${display_label})` : "";
+  await supabase.from("movements").insert({
+    movement_type: "received_unit_created",
+    inbound_order_id: orderId,
+    received_unit_id: unit.id,
+    client_id: clientId,
+    user_id: userId,
+    quantity: physical_quantity,
+    to_position_id: floorId,
+    notes: `Unidad recibida ${code}${labelNote} generada desde el resumen de descarga`,
+  });
+}
+
+/**
+ * Crea las unidades recibidas que faltan según el resumen de descarga.
+ * - pallet / box / package: una fila por unidad física (physical_quantity = 1).
+ * - loose_item: una fila agregada con physical_quantity = faltante total.
+ * Compara por tipo (suma de physical_quantity) y solo agrega el faltante.
  */
 async function generateMissingReceivedUnits(
   supabase: ReturnType<typeof createClient>,
@@ -619,51 +678,44 @@ async function generateMissingReceivedUnits(
     );
   }
 
-  const order: ReceivedUnitType[] = ["pallet", "box", "package", "loose_item"];
-  for (const type of order) {
+  const types: ReceivedUnitType[] = [
+    "pallet",
+    "box",
+    "package",
+    "loose_item",
+  ];
+
+  for (const type of types) {
     const desired = Number(counts[type] ?? 0);
     if (desired <= 0) continue;
     const already = existingByType.get(type) ?? 0;
     const missing = desired - already;
     if (missing <= 0) continue;
 
-    const { data: code } = await supabase.rpc("next_received_unit_code");
-    if (!code) continue;
-
-    const { data: unit } = await supabase
-      .from("received_units")
-      .insert({
-        code,
-        inbound_order_id: orderId,
-        client_id: clientId,
+    if (RECEIVED_UNIT_INDIVIDUAL_TYPES.includes(type)) {
+      for (let i = 0; i < missing; i++) {
+        const labelIndex = already + i + 1;
+        await insertReceivedUnitFromDischarge(supabase, {
+          orderId,
+          clientId,
+          userId,
+          floorId,
+          type,
+          physical_quantity: 1,
+          display_label: buildReceivedUnitDisplayLabel(type, labelIndex),
+        });
+      }
+    } else {
+      await insertReceivedUnitFromDischarge(supabase, {
+        orderId,
+        clientId,
+        userId,
+        floorId,
         type,
         physical_quantity: missing,
-        content_status: "unknown",
-        current_position_id: floorId,
-        // Las unidades nacen SIN requisitos de procesamiento: los flags de la
-        // descarga son solo para facturación/resumen, no se heredan. Si una
-        // unidad puntual requiere clasificación/desconsolidación/armado/
-        // reembalaje, se marca a mano. Por default: todo false -> ubicable.
-        requires_classification: false,
-        requires_desconsolidation: false,
-        requires_assembly: false,
-        requires_repackaging: false,
-        notes: "Generada desde el resumen de descarga",
-      })
-      .select("id")
-      .single();
-    if (!unit) continue;
-
-    await supabase.from("movements").insert({
-      movement_type: "received_unit_created",
-      inbound_order_id: orderId,
-      received_unit_id: unit.id,
-      client_id: clientId,
-      user_id: userId,
-      quantity: missing,
-      to_position_id: floorId,
-      notes: `Unidad recibida ${code} generada desde el resumen de descarga`,
-    });
+        display_label: buildReceivedUnitDisplayLabel(type, 1),
+      });
+    }
   }
 }
 
@@ -934,6 +986,7 @@ export async function createReceivedUnitAction(
       client_id: order.client_id,
       type: parsed.data.type,
       physical_quantity: parsed.data.physical_quantity,
+      display_label: parsed.data.display_label ?? null,
       content_status: parsed.data.content_status,
       current_position_id: parsed.data.current_position_id,
       requires_classification: parsed.data.requires_classification,

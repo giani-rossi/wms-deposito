@@ -268,6 +268,7 @@ export interface ReceivedUnitRow extends Timestamps {
   client_id: string;
   type: ReceivedUnitType;
   physical_quantity: number;
+  display_label: string | null;
   content_status: ContentStatus;
   current_position_id: string | null;
   notes: string | null;

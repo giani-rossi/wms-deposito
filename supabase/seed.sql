@@ -88,13 +88,13 @@ on conflict (id) do nothing;
 -- ---------------------------------------------------------------------
 -- 6) Unidad recibida (pallet cerrado) -> luego clasificada
 -- ---------------------------------------------------------------------
-insert into received_units (id, code, inbound_order_id, client_id, type, physical_quantity, content_status, current_position_id, requires_classification, notes)
+insert into received_units (id, code, inbound_order_id, client_id, type, physical_quantity, display_label, content_status, current_position_id, requires_classification, notes)
 values (
   '20000001-0000-0000-0000-000000000001',
   'UR-0001',
   '10000001-0000-0000-0000-000000000001',
   'c0000001-0000-0000-0000-000000000001',
-  'pallet', 1, 'validated',
+  'pallet', 1, 'Pallet 1', 'validated',
   (select id from positions where code = 'FLOOR-INBOUND-01'),
   true,
   'Pallet cerrado, clasificado en piso de clasificación.'

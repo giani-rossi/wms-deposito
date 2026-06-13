@@ -22,6 +22,11 @@ import {
 } from "@/lib/constants";
 import { formatDate, formatDateTime, orDash } from "@/lib/format";
 import {
+  buildProcessableUnit,
+  canShowProcessButton,
+  type ProcessableUnit,
+} from "@/lib/processing/processable-unit";
+import {
   ocrDataSchema,
   EMPTY_OCR_DATA,
   type OcrData,
@@ -211,9 +216,63 @@ export default async function OrdenIngresoFichaPage({
   const unitsWithContent = new Set(
     (contents ?? []).map((c) => c.received_unit_id)
   );
+  const productMap = new Map((products ?? []).map((p) => [p.id, p]));
   const hasContentByUnitId = Object.fromEntries(
     unitRows.map((u) => [u.id, unitsWithContent.has(u.id)])
   ) as Record<string, boolean>;
+
+  const floorInboundId =
+    (positions ?? []).find((p) => p.code === "FLOOR-INBOUND-01")?.id ?? null;
+
+  const readyLogisticUnitRows = (logisticUnits ?? []).filter(
+    (lu) =>
+      lu.status === "ready_to_locate" &&
+      lu.received_unit_id != null &&
+      floorInboundId != null &&
+      lu.current_position_id === floorInboundId
+  );
+  const readyLuIds = readyLogisticUnitRows.map((lu) => lu.id);
+  const { data: readyLuContentsRaw } = readyLuIds.length
+    ? await supabase
+        .from("logistic_unit_contents")
+        .select("logistic_unit_id, quantity, product_id")
+        .in("logistic_unit_id", readyLuIds)
+    : { data: [] as { logistic_unit_id: string; quantity: number; product_id: string }[] };
+
+  const readyProductIds = [
+    ...new Set((readyLuContentsRaw ?? []).map((c) => c.product_id)),
+  ];
+  const { data: readyProducts } = readyProductIds.length
+    ? await supabase.from("products").select("id, name").in("id", readyProductIds)
+    : { data: [] as { id: string; name: string }[] };
+  const readyProductNameMap = new Map(
+    (readyProducts ?? []).map((p) => [p.id, p.name])
+  );
+
+  const stockSummaryByLu = new Map<string, string>();
+  for (const row of readyLuContentsRaw ?? []) {
+    const name = readyProductNameMap.get(row.product_id) ?? "Producto";
+    const line = `${name} × ${Number(row.quantity)}`;
+    const existing = stockSummaryByLu.get(row.logistic_unit_id);
+    if (!existing) {
+      stockSummaryByLu.set(row.logistic_unit_id, line);
+    } else if (existing.split(", ").length < 3) {
+      stockSummaryByLu.set(row.logistic_unit_id, `${existing}, ${line}`);
+    }
+  }
+
+  const receivedUnitCodeMap = new Map(unitRows.map((u) => [u.id, u.code]));
+
+  const readyLogisticUnits = readyLogisticUnitRows.map((lu) => ({
+    id: lu.id,
+    code: lu.code,
+    type: lu.type,
+    receivedUnitCode: lu.received_unit_id
+      ? receivedUnitCodeMap.get(lu.received_unit_id) ?? null
+      : null,
+    stockSummary: stockSummaryByLu.get(lu.id) ?? "",
+    hasContent: (readyLuContentsRaw ?? []).some((c) => c.logistic_unit_id === lu.id),
+  }));
 
   // ----- Cómputo de ubicación + flujo guiado (próximo paso) -----
   const locatedByRU = new Map<string, number>();
@@ -235,6 +294,7 @@ export default async function OrdenIngresoFichaPage({
   }
 
   const pendingUnits = unitRows
+    .filter((u) => !u.processed_at)
     .map((u) => {
       const located = locatedByRU.get(u.id) ?? 0;
       return {
@@ -259,6 +319,7 @@ export default async function OrdenIngresoFichaPage({
 
   // Gating de clasificación: solo por flags operativos (no por content_status).
   const unitsToClassify = pendingUnits.filter(receivedUnitRequiresProcessing);
+  const unitsReadyToProcess = unitsToClassify.filter((u) => u.hasContent);
   const unitsToLocate = pendingUnits.filter(
     (u) => !receivedUnitRequiresProcessing(u)
   );
@@ -267,9 +328,13 @@ export default async function OrdenIngresoFichaPage({
     unitsCount: unitRows.length,
     hasDischarge: Boolean(discharge),
     needContent: unitRows.filter((u) => !unitsWithContent.has(u.id)).length,
-    needClassification: unitsToClassify.length,
-    readyToLocate: unitsToLocate.length,
-    allLocated: unitRows.length > 0 && pendingUnits.length === 0,
+    needClassification: unitsReadyToProcess.length,
+    readyToLocate: unitsToLocate.length + readyLogisticUnits.length,
+    allLocated:
+      unitRows.length > 0 &&
+      unitsToClassify.length === 0 &&
+      unitsToLocate.length === 0 &&
+      readyLogisticUnits.length === 0,
   };
 
   // ----- Tab: Resumen -----
@@ -405,6 +470,30 @@ export default async function OrdenIngresoFichaPage({
     )
   );
 
+  const locatedQtyByUnitId = Object.fromEntries(
+    unitRows.map((u) => [u.id, locatedByRU.get(u.id) ?? 0])
+  ) as Record<string, number>;
+
+  const processableByUnitId: Record<string, ProcessableUnit> = {};
+  for (const u of unitRows) {
+    if (!canShowProcessButton(u, locatedByRU.get(u.id) ?? 0)) continue;
+    const unitContents = (contents ?? [])
+      .filter((c) => c.received_unit_id === u.id)
+      .map((c) => ({
+        product_id: c.product_id,
+        name: productMap.get(c.product_id)?.name ?? "Producto",
+        sku: productMap.get(c.product_id)?.sku ?? null,
+        unit_of_measure: c.unit_of_measure,
+        quantity: Number(c.quantity),
+      }));
+    processableByUnitId[u.id] = buildProcessableUnit({
+      unit: u,
+      clientName: client?.nombre ?? "—",
+      orderLabel: order.remittance_number ?? "Ver orden",
+      contents: unitContents,
+    });
+  }
+
   const unidadesTab = (
     <ReceivedUnitsSection
       orderId={order.id}
@@ -413,12 +502,13 @@ export default async function OrdenIngresoFichaPage({
       discharge={discharge}
       processedUnitIds={processedUnitIds}
       hasContentByUnitId={hasContentByUnitId}
+      locatedQtyByUnitId={locatedQtyByUnitId}
+      processableByUnitId={processableByUnitId}
       staff={staff}
     />
   );
 
   // ----- Tab: Contenido / stock -----
-  const productMap = new Map((products ?? []).map((p) => [p.id, p]));
   const processedSet = new Set(processedUnitIds);
 
   const contentsByUnit: Record<
@@ -630,6 +720,7 @@ export default async function OrdenIngresoFichaPage({
       <LocationSection
         unitsToClassify={unitsToClassify}
         unitsToLocate={unitsToLocate}
+        readyLogisticUnits={readyLogisticUnits}
         candidatePositions={candidatePositions}
         locatedUnits={locatedUnits}
         usedPositions={usedPositions}

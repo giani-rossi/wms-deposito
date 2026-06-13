@@ -276,6 +276,8 @@ export interface ReceivedUnitRow extends Timestamps {
   requires_desconsolidation: boolean;
   requires_assembly: boolean;
   requires_repackaging: boolean;
+  processed_at: string | null;
+  last_processing_movement_id: string | null;
 }
 
 export interface InboundOrderDischargeRow extends Timestamps {
@@ -553,7 +555,10 @@ export interface Database {
       };
       received_units: {
         Row: Indexed<ReceivedUnitRow>;
-        Insert: InsertOf<ReceivedUnitRow, AutoCols>;
+        Insert: InsertOf<
+          ReceivedUnitRow,
+          AutoCols | "processed_at" | "last_processing_movement_id"
+        >;
         Update: Partial<ReceivedUnitRow>;
         Relationships: [];
       };

@@ -165,6 +165,17 @@ export const BILLING_UNIT_BY_TYPE: Record<ReceivedUnitType, string> = {
   unknown: "unidad",
 };
 
+/** Unidad de facturación al ubicar una unidad logística ya creada. */
+export const BILLING_UNIT_BY_LOGISTIC_TYPE: Record<LogisticUnitType, string> = {
+  pallet: "pallet",
+  box: "caja",
+  package: "bulto",
+  assembled: "unidad",
+  mixed: "unidad",
+  set: "unidad",
+  loose_item: "unidad",
+};
+
 /**
  * Regla única de gating de clasificación: una unidad recibida requiere
  * procesamiento previo (y por lo tanto NO puede ubicarse) si y solo si tiene

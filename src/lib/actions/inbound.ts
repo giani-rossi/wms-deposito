@@ -28,6 +28,10 @@ import {
   buildReceivedUnitDisplayLabel,
 } from "@/lib/constants";
 import { extractRemittanceData, OcrError } from "@/lib/ocr/openai";
+import {
+  locatedQtyForReceivedUnit,
+  refreshInboundLocationStatus,
+} from "@/lib/actions/inbound-location-status";
 
 export type InboundFormState =
   | { error?: string; ok?: boolean }
@@ -171,7 +175,7 @@ export async function closeInboundOrderAction(
     supabase
       .from("received_units")
       .select(
-        "id, physical_quantity, content_status, requires_classification, requires_desconsolidation, requires_assembly, requires_repackaging"
+        "id, physical_quantity, content_status, processed_at, requires_classification, requires_desconsolidation, requires_assembly, requires_repackaging"
       )
       .eq("inbound_order_id", orderId),
     supabase
@@ -215,9 +219,13 @@ export async function closeInboundOrderAction(
   if (pendingToLocate.length > 0)
     reasons.push(`${pendingToLocate.length} unidad(es) sin ubicar`);
 
-  const withFlags = (units ?? []).filter(requiresProcessing);
-  if (withFlags.length > 0)
-    reasons.push(`${withFlags.length} unidad(es) con procesamiento pendiente`);
+  const withProcessingPending = (units ?? []).filter(
+    (u) => requiresProcessing(u) && !u.processed_at
+  );
+  if (withProcessingPending.length > 0)
+    reasons.push(
+      `${withProcessingPending.length} unidad(es) con procesamiento pendiente`
+    );
 
   const inReview = (units ?? []).filter(
     (u) => u.content_status === "incident"
@@ -386,7 +394,7 @@ export async function deleteInboundOrderAction(
  *  - actualiza/crea el movimiento `download_from_truck` (con cantidad total),
  *  - genera los servicios facturables `truck_download` POR TIPO (pallet/caja/
  *    bulto/unidad). Solo si no hay detalle por tipo factura "1 camión".
- *  - genera `desconsolidation` aparte si aplica (no duplica la descarga).
+ * La desconsolidación se factura al confirmar procesamiento, no en descarga.
  * Es idempotente: al reejecutar, regenera solo los servicios pendientes que
  * crea esta acción (nunca toca los ya facturados).
  */
@@ -495,11 +503,11 @@ export async function registerDownloadAction(
     .delete()
     .eq("inbound_order_id", orderId)
     .eq("status", "pending_billing")
-    .in("service_type", ["truck_download", "desconsolidation"]);
+    .in("service_type", ["truck_download"]);
 
   const services: {
     client_id: string;
-    service_type: "truck_download" | "desconsolidation";
+    service_type: "truck_download";
     quantity: number;
     unit: string;
     inbound_order_id: string;
@@ -550,20 +558,6 @@ export async function registerDownloadAction(
       notes: "Descarga de camión (sin detalle por tipo)",
     });
   }
-  // La desconsolidación es un servicio separado: no reemplaza ni duplica la
-  // descarga por unidad.
-  if (d.requires_desconsolidation) {
-    services.push({
-      client_id: order.client_id,
-      service_type: "desconsolidation",
-      quantity: 1,
-      unit: "servicio",
-      inbound_order_id: orderId,
-      movement_id: movementId,
-      status: "pending_billing",
-      notes: "Desconsolidación requerida en descarga",
-    });
-  }
   await supabase.from("billable_services").insert(services);
 
   // 4) Generar unidades recibidas faltantes a partir del resumen (por tipo).
@@ -579,6 +573,12 @@ export async function registerDownloadAction(
       package: d.packages_count,
       loose_item: d.loose_items_count,
     },
+    processingFlags: {
+      requires_classification: d.requires_classification,
+      requires_desconsolidation: d.requires_desconsolidation,
+      requires_assembly: d.requires_assembly,
+      requires_repackaging: false,
+    },
   });
 
   await supabase
@@ -593,6 +593,13 @@ export async function registerDownloadAction(
 /**
  * Inserta una unidad recibida + movimiento de creación.
  */
+type DischargeProcessingFlags = {
+  requires_classification: boolean;
+  requires_desconsolidation: boolean;
+  requires_assembly: boolean;
+  requires_repackaging: boolean;
+};
+
 async function insertReceivedUnitFromDischarge(
   supabase: ReturnType<typeof createClient>,
   params: {
@@ -603,10 +610,19 @@ async function insertReceivedUnitFromDischarge(
     type: ReceivedUnitType;
     physical_quantity: number;
     display_label: string | null;
+    processingFlags: DischargeProcessingFlags;
   }
 ): Promise<void> {
-  const { orderId, clientId, userId, floorId, type, physical_quantity, display_label } =
-    params;
+  const {
+    orderId,
+    clientId,
+    userId,
+    floorId,
+    type,
+    physical_quantity,
+    display_label,
+    processingFlags,
+  } = params;
 
   const { data: code } = await supabase.rpc("next_received_unit_code");
   if (!code) return;
@@ -622,12 +638,10 @@ async function insertReceivedUnitFromDischarge(
       display_label,
       content_status: "unknown",
       current_position_id: floorId,
-      // Las unidades nacen SIN requisitos de procesamiento: los flags de la
-      // descarga son solo para facturación/resumen, no se heredan.
-      requires_classification: false,
-      requires_desconsolidation: false,
-      requires_assembly: false,
-      requires_repackaging: false,
+      requires_classification: processingFlags.requires_classification,
+      requires_desconsolidation: processingFlags.requires_desconsolidation,
+      requires_assembly: processingFlags.requires_assembly,
+      requires_repackaging: processingFlags.requires_repackaging,
       notes: "Generada desde el resumen de descarga",
     })
     .select("id")
@@ -661,9 +675,11 @@ async function generateMissingReceivedUnits(
     userId: string;
     floorId: string | null;
     counts: Record<ReceivedUnitType, number> | Record<string, number>;
+    processingFlags: DischargeProcessingFlags;
   }
 ): Promise<void> {
-  const { orderId, clientId, userId, floorId, counts } = params;
+  const { orderId, clientId, userId, floorId, counts, processingFlags } =
+    params;
 
   const { data: existing } = await supabase
     .from("received_units")
@@ -703,6 +719,7 @@ async function generateMissingReceivedUnits(
           type,
           physical_quantity: 1,
           display_label: buildReceivedUnitDisplayLabel(type, labelIndex),
+          processingFlags,
         });
       }
     } else {
@@ -714,6 +731,7 @@ async function generateMissingReceivedUnits(
         type,
         physical_quantity: missing,
         display_label: buildReceivedUnitDisplayLabel(type, 1),
+        processingFlags,
       });
     }
   }
@@ -762,6 +780,12 @@ export async function generateMissingReceivedUnitsAction(
       box: discharge.boxes_count,
       package: discharge.packages_count,
       loose_item: discharge.loose_items_count,
+    },
+    processingFlags: {
+      requires_classification: discharge.requires_classification,
+      requires_desconsolidation: discharge.requires_desconsolidation,
+      requires_assembly: discharge.requires_assembly,
+      requires_repackaging: false,
     },
   });
 
@@ -1126,19 +1150,6 @@ export async function deleteReceivedUnitAction(
 // Ubicación de mercadería (crea unidades logísticas + movimientos + servicios)
 // ---------------------------------------------------------------------------
 
-/** Cantidad ya ubicada de una unidad recibida (suma de location_assignment). */
-async function locatedQtyForReceivedUnit(
-  supabase: ReturnType<typeof createClient>,
-  receivedUnitId: string
-): Promise<number> {
-  const { data } = await supabase
-    .from("movements")
-    .select("quantity")
-    .eq("received_unit_id", receivedUnitId)
-    .eq("movement_type", "location_assignment");
-  return (data ?? []).reduce((acc, m) => acc + (Number(m.quantity) || 0), 0);
-}
-
 /**
  * Ubica una unidad recibida en una o más posiciones destino.
  * Por cada destino crea una unidad logística `located`, su movimiento
@@ -1169,11 +1180,19 @@ export async function locateReceivedUnitAction(
   const { data: unit } = await supabase
     .from("received_units")
     .select(
-      "id, client_id, inbound_order_id, type, physical_quantity, requires_classification, requires_desconsolidation, requires_assembly, requires_repackaging, current_position_id"
+      "id, client_id, inbound_order_id, type, physical_quantity, processed_at, requires_classification, requires_desconsolidation, requires_assembly, requires_repackaging, current_position_id"
     )
     .eq("id", receivedUnitId)
     .single();
   if (!unit) return { ok: false, error: "Unidad recibida no encontrada." };
+
+  if (unit.processed_at) {
+    return {
+      ok: false,
+      error:
+        "Esta unidad recibida ya fue procesada. Ubicá las unidades logísticas resultantes desde el listado de unidades listas para ubicar.",
+    };
+  }
 
   if (
     unit.requires_classification ||
@@ -1398,70 +1417,4 @@ export async function locateReceivedUnitAction(
   revalidatePath("/mapa");
   revalidatePath("/unidades-logisticas");
   return { ok: true };
-}
-
-/**
- * Recalcula el estado de la orden según cuánto se ubicó:
- *  - si todas las unidades recibidas (sin clasificación pendiente) quedaron
- *    completamente ubicadas -> `located`
- *  - si hay algo ubicado pero falta -> al menos `ready_to_locate`
- */
-async function refreshInboundLocationStatus(
-  supabase: ReturnType<typeof createClient>,
-  orderId: string
-): Promise<void> {
-  const { data: units } = await supabase
-    .from("received_units")
-    .select(
-      "id, physical_quantity, requires_classification, requires_desconsolidation, requires_assembly, requires_repackaging"
-    )
-    .eq("inbound_order_id", orderId);
-
-  if (!units || units.length === 0) return;
-
-  let allLocated = true;
-  for (const u of units) {
-    const requiresProcessing =
-      u.requires_classification ||
-      u.requires_desconsolidation ||
-      u.requires_assembly ||
-      u.requires_repackaging;
-    const located = await locatedQtyForReceivedUnit(supabase, u.id);
-    if (requiresProcessing || located < Number(u.physical_quantity)) {
-      allLocated = false;
-    }
-  }
-
-  const { data: order } = await supabase
-    .from("inbound_orders")
-    .select("status")
-    .eq("id", orderId)
-    .single();
-  if (!order) return;
-
-  const current = order.status as InboundOrderStatus;
-  if (allLocated) {
-    if (current !== "located" && current !== "closed") {
-      await supabase
-        .from("inbound_orders")
-        .update({ status: "located" })
-        .eq("id", orderId);
-    }
-    return;
-  }
-
-  // Aún quedan pendientes: asegurar al menos ready_to_locate (sin retroceder)
-  const beforeLocate: InboundOrderStatus[] = [
-    "pending_download",
-    "downloaded",
-    "pending_validation",
-    "pending_classification",
-    "partially_classified",
-  ];
-  if (beforeLocate.includes(current)) {
-    await supabase
-      .from("inbound_orders")
-      .update({ status: "ready_to_locate" })
-      .eq("id", orderId);
-  }
 }

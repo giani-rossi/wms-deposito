@@ -374,6 +374,8 @@ create table received_units (
   requires_desconsolidation boolean not null default false,
   requires_assembly boolean not null default false,
   requires_repackaging boolean not null default false,
+  processed_at timestamptz,
+  last_processing_movement_id uuid references movements (id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );

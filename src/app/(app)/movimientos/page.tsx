@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ArrowLeftRight } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
-import { MOVEMENT_TYPE_LABELS } from "@/lib/constants";
+import { MOVEMENT_TYPE_LABELS, positionPrimaryLabel } from "@/lib/constants";
 import type { MovementType } from "@/lib/types/database";
 import { formatDateTime, orDash } from "@/lib/format";
 import { PageHeader } from "@/components/layout/page-header";
@@ -50,6 +50,27 @@ export default async function MovimientosPage({
 
   const { data: movements } = await query;
   const rows = movements ?? [];
+
+  const positionIds = [
+    ...new Set(
+      rows.flatMap((m) => [m.from_position_id, m.to_position_id]).filter(Boolean)
+    ),
+  ] as string[];
+  const luIds = [
+    ...new Set(rows.map((m) => m.logistic_unit_id).filter(Boolean)),
+  ] as string[];
+
+  const [{ data: positions }, { data: logisticUnits }] = await Promise.all([
+    positionIds.length
+      ? supabase.from("positions").select("id, code").in("id", positionIds)
+      : Promise.resolve({ data: [] }),
+    luIds.length
+      ? supabase.from("logistic_units").select("id, code").in("id", luIds)
+      : Promise.resolve({ data: [] }),
+  ]);
+
+  const posCodeMap = new Map((positions ?? []).map((p) => [p.id, p.code]));
+  const luCodeMap = new Map((logisticUnits ?? []).map((u) => [u.id, u.code]));
 
   return (
     <>
@@ -111,6 +132,8 @@ export default async function MovimientosPage({
                     <TableHead>Fecha</TableHead>
                     <TableHead>Tipo</TableHead>
                     <TableHead>Cliente</TableHead>
+                    <TableHead>Unidad</TableHead>
+                    <TableHead>Desde → Hacia</TableHead>
                     <TableHead className="text-right">Cantidad</TableHead>
                     <TableHead>Orden ingreso</TableHead>
                     <TableHead>Notas</TableHead>
@@ -131,6 +154,30 @@ export default async function MovimientosPage({
                         {m.client_id
                           ? clientMap.get(m.client_id) ?? "—"
                           : "—"}
+                      </TableCell>
+                      <TableCell className="font-mono text-sm">
+                        {m.logistic_unit_id
+                          ? luCodeMap.get(m.logistic_unit_id) ?? "—"
+                          : "—"}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {m.from_position_id || m.to_position_id ? (
+                          <>
+                            {m.from_position_id
+                              ? positionPrimaryLabel(
+                                  posCodeMap.get(m.from_position_id)
+                                )
+                              : "—"}
+                            {" → "}
+                            {m.to_position_id
+                              ? positionPrimaryLabel(
+                                  posCodeMap.get(m.to_position_id)
+                                )
+                              : "—"}
+                          </>
+                        ) : (
+                          "—"
+                        )}
                       </TableCell>
                       <TableCell className="text-right">
                         {m.quantity != null ? Number(m.quantity) : "—"}

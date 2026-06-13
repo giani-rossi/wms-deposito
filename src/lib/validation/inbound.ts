@@ -193,6 +193,15 @@ export const locateInputSchema = z.object({
 export type LocateDestinationInput = z.infer<typeof locateDestinationSchema>;
 export type LocateInput = z.infer<typeof locateInputSchema>;
 
+export const locateReadyLogisticUnitSchema = z.object({
+  logistic_unit_id: z.string().uuid("Unidad logística inválida"),
+  destination: locateDestinationSchema,
+});
+
+export type LocateReadyLogisticUnitInput = z.infer<
+  typeof locateReadyLogisticUnitSchema
+>;
+
 // ---------------------------------------------------------------------------
 // OCR — datos confirmados por el humano (estructura normalizada)
 // ---------------------------------------------------------------------------

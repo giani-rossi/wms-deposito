@@ -211,7 +211,7 @@ Las **acciones guiadas** de la card "Gestión de la orden" se muestran según el
 
 - **Tabla**: `inbound_order_discharge` (1:1 con la orden, `inbound_order_id` único).
 - **Counts**: `pallets_count`, `boxes_count`, `packages_count`, `loose_items_count`, `total_units_count` (opcional; si vacío se calcula como suma).
-- **Flags (solo facturación/resumen)**: `requires_desconsolidation`, `requires_classification`, `requires_assembly`. **No se heredan** a las unidades.
+- **Flags de descarga**: `requires_desconsolidation`, `requires_classification`, `requires_assembly`. Se **heredan** a cada `received_unit` generada desde el resumen de descarga (incluye `loose_item`). `requires_repackaging` solo aplica en la unidad recibida (no está en el snapshot de descarga).
 - **Servicios generados** (`registerDownloadAction`):
   - `truck_download` cantidad 1 unidad "camión".
   - `truck_download` por tipo con count > 0 (unidad: pallet/caja/bulto/unidad suelta).
@@ -264,6 +264,15 @@ Las **acciones guiadas** de la card "Gestión de la orden" se muestran según el
   - Crea **servicio facturable** `location_assignment` (`pending_billing`).
   - Actualiza el **estado de ocupación de la posición** según lo elegido por el usuario (Parcialmente ocupada / Ocupada). Si no se eligió, por defecto pasa de **Libre → Parcialmente ocupada**; en otros estados se respeta el actual (no se infiere por cantidad).
 - **Estado de la orden**: `refreshInboundLocationStatus` recalcula: si todo lo ubicable quedó ubicado → `located`; si falta, al menos `ready_to_locate` (sin retroceder).
+
+### Movimientos internos entre racks (MVP)
+
+- **Acción** `moveLogisticUnitAction` (solo staff): mueve una `logistic_unit` en estado `located` de un rack a otro rack.
+- **UI**: botón **Mover** en la ficha de posición (`/posiciones/[id]`, tab Unidades logísticas).
+- **Destino permitido**: solo `positions.type = rack`. Zonas de piso (ingreso, retiro, revisión) quedan fuera.
+- **Validaciones**: misma posición prohibida; destino bloqueado/en revisión u otro cliente requiere override staff; mezcla de clientes exige nota obligatoria.
+- **Al confirmar**: `movement` `internal_movement` + actualización de `logistic_units.current_position_id`. **No** se genera `billable_service` en MVP (el enum `internal_movement` existe para facturación futura).
+- **Estados de posición**: no se recalculan automáticamente (permanecen manuales).
 
 ---
 
@@ -336,8 +345,9 @@ Regla central: **nada pasa sin movimiento**. Cada movimiento guarda: tipo, orden
 | `download_from_truck` | Al registrar descarga | cantidad total, destino `FLOOR-INBOUND-01`. Único por orden. |
 | `received_unit_created` | Al crear/generar una unidad recibida | received_unit_id, cantidad, destino. |
 | `location_assignment` | Al ubicar | received_unit_id, logistic_unit_id, from/to position, cantidad, servicio asociado. |
+| `internal_movement` | Al mover unidad logística entre racks (staff) | logistic_unit_id, from/to position (solo rack), cantidad, notas. **Sin servicio facturable en MVP.** |
 
-El enum incluye muchos más (classification, desconsolidation, assembly, repackaging, internal_movement, consolidation, partial_picking, rack_down, outbound_preparation, outbound_loaded, stock_adjustment, incident) para etapas futuras.
+El enum incluye muchos más (classification, desconsolidation, assembly, repackaging, consolidation, partial_picking, rack_down, outbound_preparation, outbound_loaded, stock_adjustment, incident) para etapas futuras.
 
 ---
 

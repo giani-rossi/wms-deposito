@@ -12,8 +12,10 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { locateReceivedUnitAction } from "@/lib/actions/inbound";
+import { locateReadyLogisticUnitAction } from "@/lib/actions/locate-logistic-unit";
 import {
   RECEIVED_UNIT_TYPE_LABELS,
+  LOGISTIC_UNIT_TYPE_LABELS,
   POSITION_STATUS_LABELS,
   positionPrimaryLabel,
   formatReceivedUnitHeading,
@@ -21,6 +23,7 @@ import {
 import type {
   ContentStatus,
   ReceivedUnitType,
+  LogisticUnitType,
   PositionStatus,
 } from "@/lib/types/database";
 import { orDash, formatDate } from "@/lib/format";
@@ -55,6 +58,15 @@ export type PendingUnit = {
   requires_desconsolidation: boolean;
   requires_assembly: boolean;
   requires_repackaging: boolean;
+  hasContent: boolean;
+};
+
+export type ReadyLogisticUnit = {
+  id: string;
+  code: string;
+  type: LogisticUnitType;
+  receivedUnitCode: string | null;
+  stockSummary: string;
   hasContent: boolean;
 };
 
@@ -100,6 +112,7 @@ const EMPTY_ROW: DestRow = {
 export function LocationSection({
   unitsToClassify,
   unitsToLocate,
+  readyLogisticUnits,
   candidatePositions,
   locatedUnits,
   usedPositions,
@@ -107,12 +120,14 @@ export function LocationSection({
 }: {
   unitsToClassify: PendingUnit[];
   unitsToLocate: PendingUnit[];
+  readyLogisticUnits: ReadyLogisticUnit[];
   candidatePositions: CandidatePosition[];
   locatedUnits: LocatedUnit[];
   usedPositions: string[];
   staff: boolean;
 }) {
   const [target, setTarget] = useState<PendingUnit | null>(null);
+  const [readyTarget, setReadyTarget] = useState<ReadyLogisticUnit | null>(null);
 
   return (
     <div className="space-y-6">
@@ -198,7 +213,7 @@ export function LocationSection({
           {unitsToLocate.length === 0 ? (
             <EmptyState
               icon={PackageCheck}
-              title="No hay unidades listas para ubicar"
+              title="No hay unidades recibidas listas para ubicar"
               description="Generá unidades recibidas desde la descarga o, si requieren procesamiento, pasá primero por Clasificación."
             />
           ) : (
@@ -264,6 +279,65 @@ export function LocationSection({
         </CardContent>
       </Card>
 
+      {/* C. Unidades logísticas listas (post-procesamiento) */}
+      <Card>
+        <CardContent className="pt-6">
+          <h3 className="text-sm font-semibold">
+            Unidades logísticas listas para ubicar
+          </h3>
+          <p className="mb-4 mt-1 text-sm text-muted-foreground">
+            Resultantes de clasificación o procesamiento. Se mueven como unidad
+            logística completa desde piso ingreso hacia rack.
+          </p>
+          {readyLogisticUnits.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No hay unidades logísticas pendientes de ubicación en piso ingreso.
+            </p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Unidad logística</TableHead>
+                  <TableHead>Tipo</TableHead>
+                  <TableHead>Origen (UR)</TableHead>
+                  <TableHead>Contenido</TableHead>
+                  {staff && <TableHead className="text-right">Acción</TableHead>}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {readyLogisticUnits.map((lu) => (
+                  <TableRow key={lu.id}>
+                    <TableCell className="font-mono text-sm font-medium">
+                      {lu.code}
+                    </TableCell>
+                    <TableCell>{LOGISTIC_UNIT_TYPE_LABELS[lu.type]}</TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {lu.receivedUnitCode ?? "—"}
+                    </TableCell>
+                    <TableCell className="max-w-xs truncate text-sm text-muted-foreground">
+                      {lu.hasContent ? lu.stockSummary || "Con contenido" : "Sin contenido"}
+                    </TableCell>
+                    {staff && (
+                      <TableCell className="text-right">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setReadyTarget(lu)}
+                        >
+                          <MapPin className="h-4 w-4" />
+                          Ubicar en rack
+                        </Button>
+                      </TableCell>
+                    )}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Ubicadas */}
       <Card>
         <CardContent className="pt-6">
@@ -317,6 +391,12 @@ export function LocationSection({
         unit={target}
         candidatePositions={candidatePositions}
         onClose={() => setTarget(null)}
+      />
+
+      <LocateReadyLogisticUnitModal
+        unit={readyTarget}
+        candidatePositions={candidatePositions}
+        onClose={() => setReadyTarget(null)}
       />
     </div>
   );
@@ -657,6 +737,213 @@ function LocateModal({
             Total a ubicar: {totalRequested} / {unit.available}
           </span>
         </div>
+
+        {error && (
+          <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            {error}
+          </p>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+function LocateReadyLogisticUnitModal({
+  unit,
+  candidatePositions,
+  onClose,
+}: {
+  unit: ReadyLogisticUnit | null;
+  candidatePositions: CandidatePosition[];
+  onClose: () => void;
+}) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const [positionId, setPositionId] = useState("");
+  const [assign, setAssign] = useState(true);
+  const [override, setOverride] = useState(false);
+  const [finalStatus, setFinalStatus] = useState<FinalStatusChoice>("");
+
+  const selected = positionId
+    ? candidatePositions.find((p) => p.id === positionId)
+    : null;
+  const showAssign = selected?.free ?? false;
+  const sameClientWithUnits =
+    selected != null &&
+    !selected.otherClient &&
+    !selected.blocked &&
+    selected.currentUnitsCount > 0;
+  const needsOverride =
+    selected != null && (selected.otherClient || selected.blocked);
+
+  function close() {
+    if (isPending) return;
+    setPositionId("");
+    setAssign(true);
+    setOverride(false);
+    setFinalStatus("");
+    setError(null);
+    onClose();
+  }
+
+  function onConfirm() {
+    if (!unit || !positionId) {
+      setError("Elegí la posición destino en rack.");
+      return;
+    }
+    if (needsOverride && !override) {
+      setError("Confirmá el override para ubicar en esta posición.");
+      return;
+    }
+
+    setError(null);
+    startTransition(async () => {
+      const res = await locateReadyLogisticUnitAction({
+        logistic_unit_id: unit.id,
+        destination: {
+          position_id: positionId,
+          quantity: 1,
+          assign_to_client: assign,
+          override,
+          ...(finalStatus ? { final_status: finalStatus } : {}),
+        },
+      });
+      if (!res.ok) {
+        setError(res.error ?? "No se pudo ubicar la unidad logística.");
+        return;
+      }
+      close();
+      router.refresh();
+    });
+  }
+
+  if (!unit) return null;
+
+  return (
+    <Modal
+      open={unit != null}
+      onClose={close}
+      title={`Ubicar ${unit.code}`}
+      description={`${LOGISTIC_UNIT_TYPE_LABELS[unit.type]} · unidad completa desde piso ingreso${
+        unit.stockSummary ? ` · ${unit.stockSummary}` : ""
+      }`}
+      footer={
+        <>
+          <Button type="button" variant="outline" onClick={close} disabled={isPending}>
+            Cancelar
+          </Button>
+          <Button type="button" onClick={onConfirm} disabled={isPending}>
+            {isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <MapPin className="h-4 w-4" />
+            )}
+            Confirmar ubicación
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <p className="text-sm text-muted-foreground">
+          Se ubicará la unidad logística completa con todo su contenido.
+        </p>
+
+        {candidatePositions.length === 0 && (
+          <p className="flex items-center gap-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            <AlertTriangle className="h-4 w-4" />
+            No hay posiciones de rack disponibles para este cliente.
+          </p>
+        )}
+
+        <div className="space-y-2">
+          <Label htmlFor="ready-lu-position">Posición destino (rack)</Label>
+          <Select
+            id="ready-lu-position"
+            value={positionId}
+            onChange={(e) => {
+              setPositionId(e.target.value);
+              setOverride(false);
+              setError(null);
+            }}
+          >
+            <option value="">Seleccionar…</option>
+            {candidatePositions.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.code}
+                {p.assignedToClient
+                  ? " (asignada)"
+                  : p.free
+                  ? " (libre)"
+                  : p.otherClient
+                  ? " (otro cliente)"
+                  : p.blocked
+                  ? ` (${POSITION_STATUS_LABELS[p.status]})`
+                  : ""}
+              </option>
+            ))}
+          </Select>
+          {showAssign && (
+            <label className="flex items-center gap-2 pt-1 text-xs text-muted-foreground">
+              <Checkbox checked={assign} onChange={(e) => setAssign(e.target.checked)} />
+              Asignar esta posición al cliente
+            </label>
+          )}
+        </div>
+
+        {selected && (
+          <div className="rounded-md bg-muted/40 px-3 py-2 text-xs">
+            <p>
+              <span className="text-muted-foreground">Estado: </span>
+              {POSITION_STATUS_LABELS[selected.status]}
+            </p>
+            {selected.currentUnitCodes.length > 0 && (
+              <p className="mt-1 text-muted-foreground">
+                U. logísticas: {selected.currentUnitCodes.join(", ")}
+              </p>
+            )}
+          </div>
+        )}
+
+        {sameClientWithUnits && (
+          <p className="flex items-start gap-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            El destino ya tiene mercadería del mismo cliente. Podés continuar.
+          </p>
+        )}
+
+        {selected?.otherClient && (
+          <label className="flex items-center gap-2 rounded-md border p-3 text-sm">
+            <Checkbox checked={override} onChange={(e) => setOverride(e.target.checked)} />
+            Confirmo ubicar con otro cliente en destino (override)
+          </label>
+        )}
+
+        {selected?.blocked && (
+          <label className="flex items-center gap-2 rounded-md border p-3 text-sm">
+            <Checkbox checked={override} onChange={(e) => setOverride(e.target.checked)} />
+            Confirmo ubicar en posición bloqueada/en revisión (override)
+          </label>
+        )}
+
+        {selected && (
+          <div className="space-y-1">
+            <Label className="text-xs">Estado de ocupación tras ubicar</Label>
+            <Select
+              value={finalStatus}
+              onChange={(e) =>
+                setFinalStatus(e.target.value as FinalStatusChoice)
+              }
+            >
+              <option value="">
+                Automático
+                {selected.status === "free" ? " (parcialmente ocupada)" : " (sin cambios)"}
+              </option>
+              <option value="partially_occupied">Parcialmente ocupada</option>
+              <option value="occupied">Ocupada</option>
+            </Select>
+          </div>
+        )}
 
         {error && (
           <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">

@@ -16,6 +16,7 @@ import { getCurrentProfile, isStaff } from "@/lib/auth";
 import {
   POSITION_TYPE_LABELS,
   MOVEMENT_TYPE_LABELS,
+  LOGISTIC_UNIT_TYPE_LABELS,
   SIDE_LABELS,
   LEVEL_LABELS,
   describeRackPosition,
@@ -40,12 +41,15 @@ import {
 import {
   PositionStatusBadge,
   StockStatusBadge,
-  LogisticUnitStatusBadge,
   InboundStatusBadge,
   OutboundStatusBadge,
 } from "@/components/status-badges";
 import { DeletePositionButton } from "../_components/delete-position-button";
 import { PositionControls } from "../_components/position-controls";
+import {
+  PositionUnitsWithMove,
+  type MoveDestinationOption,
+} from "./_components/position-units-with-move";
 
 export const dynamic = "force-dynamic";
 
@@ -73,6 +77,8 @@ export default async function PosicionFichaPage({
     { data: movements },
     { data: assignments },
     { data: clients },
+    { data: allRackPositions },
+    { data: allLocatedUnits },
   ] = await Promise.all([
     supabase
       .from("logistic_units")
@@ -92,6 +98,15 @@ export default async function PosicionFichaPage({
       .eq("position_id", id)
       .order("assigned_at", { ascending: false }),
     supabase.from("clients").select("id, nombre").order("nombre"),
+    supabase
+      .from("positions")
+      .select("id, code, type, status, assigned_client_id")
+      .eq("type", "rack")
+      .order("code"),
+    supabase
+      .from("logistic_units")
+      .select("id, client_id, current_position_id")
+      .eq("status", "located"),
   ]);
 
   const clientMap = new Map((clients ?? []).map((c) => [c.id, c.nombre]));
@@ -115,6 +130,28 @@ export default async function PosicionFichaPage({
       .select("id, code")
       .in("id", otherPositionIds);
     for (const p of otherPos ?? []) posCodeMap.set(p.id, p.code);
+  }
+
+  const internalLuIds = Array.from(
+    new Set(
+      movementRows
+        .filter((m) => m.movement_type === "internal_movement")
+        .map((m) => m.logistic_unit_id)
+        .filter((v): v is string => Boolean(v))
+    )
+  );
+  const luMoveMap = new Map<
+    string,
+    { code: string; type: keyof typeof LOGISTIC_UNIT_TYPE_LABELS }
+  >();
+  if (internalLuIds.length > 0) {
+    const { data: luRows } = await supabase
+      .from("logistic_units")
+      .select("id, code, type")
+      .in("id", internalLuIds);
+    for (const u of luRows ?? []) {
+      luMoveMap.set(u.id, { code: u.code, type: u.type });
+    }
   }
 
   // Órdenes relacionadas (a partir de movimientos y unidades en la posición)
@@ -148,6 +185,76 @@ export default async function PosicionFichaPage({
   const assignmentRows = assignments ?? [];
   const relatedOrdersCount =
     (inboundOrders?.length ?? 0) + (outboundOrders?.length ?? 0);
+
+  const posOccupancy = new Map<string, { count: number; clientIds: Set<string> }>();
+  for (const lu of allLocatedUnits ?? []) {
+    if (!lu.current_position_id) continue;
+    const entry =
+      posOccupancy.get(lu.current_position_id) ??
+      { count: 0, clientIds: new Set<string>() };
+    entry.count += 1;
+    entry.clientIds.add(lu.client_id);
+    posOccupancy.set(lu.current_position_id, entry);
+  }
+
+  const stockByUnit = new Map<string, string[]>();
+  for (const s of stockRows) {
+    if (!s.logistic_unit_id) continue;
+    const line = `${s.product_name} × ${Number(s.quantity)}`;
+    const arr = stockByUnit.get(s.logistic_unit_id) ?? [];
+    if (arr.length < 3) arr.push(line);
+    stockByUnit.set(s.logistic_unit_id, arr);
+  }
+
+  const moveableUnits = unitRows.map((u) => ({
+    id: u.id,
+    code: u.code,
+    type: u.type,
+    status: u.status,
+    clientName: clientMap.get(u.client_id) ?? "—",
+    entryDate: u.entry_date ? formatDate(u.entry_date) : null,
+    stockSummary: (stockByUnit.get(u.id) ?? []).join(", "),
+    currentPositionCode: position.code,
+    clientId: u.client_id,
+  }));
+
+  function buildDestinationsForClient(clientId: string): MoveDestinationOption[] {
+    return (allRackPositions ?? []).map((p) => {
+      const occ = posOccupancy.get(p.id);
+      const occupantIds = occ ? [...occ.clientIds] : [];
+      const assignedToClient = p.assigned_client_id === clientId;
+      const otherClient =
+        (p.assigned_client_id != null && p.assigned_client_id !== clientId) ||
+        occupantIds.some((c) => c !== clientId);
+      const sameClientWithUnits =
+        !otherClient &&
+        occupantIds.some((c) => c === clientId) &&
+        (occ?.count ?? 0) > 0;
+      const blocked = p.status === "blocked" || p.status === "incident";
+      const free =
+        p.assigned_client_id == null && (occ?.count ?? 0) === 0;
+      return {
+        id: p.id,
+        code: p.code,
+        status: p.status,
+        assignedToClient,
+        free,
+        otherClient,
+        blocked,
+        sameClientWithUnits,
+      };
+    });
+  }
+
+  const uniqueClientIds = [...new Set(moveableUnits.map((u) => u.clientId))];
+  const destinationsByClient: Record<string, MoveDestinationOption[]> = {};
+  for (const cid of uniqueClientIds) {
+    destinationsByClient[cid] = buildDestinationsForClient(cid);
+  }
+
+  const internalMovements = movementRows.filter(
+    (m) => m.movement_type === "internal_movement"
+  );
 
   // ----- Tab: Resumen -----
   const resumen = (
@@ -251,34 +358,12 @@ export default async function PosicionFichaPage({
   // ----- Tab: Unidades logísticas -----
   const unidadesTab =
     unitRows.length > 0 ? (
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Código</TableHead>
-            <TableHead>Tipo</TableHead>
-            <TableHead>Cliente</TableHead>
-            <TableHead>Estado</TableHead>
-            <TableHead>Ingreso</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {unitRows.map((u) => (
-            <TableRow key={u.id}>
-              <TableCell className="font-medium">{u.code}</TableCell>
-              <TableCell>{u.type}</TableCell>
-              <TableCell className="text-muted-foreground">
-                {orDash(clientMap.get(u.client_id))}
-              </TableCell>
-              <TableCell>
-                <LogisticUnitStatusBadge status={u.status} />
-              </TableCell>
-              <TableCell className="text-muted-foreground">
-                {formatDate(u.entry_date)}
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+      <PositionUnitsWithMove
+        units={moveableUnits}
+        destinationsByClient={destinationsByClient}
+        currentPositionId={id}
+        staff={staff}
+      />
     ) : (
       <EmptyState
         icon={Package}
@@ -290,7 +375,12 @@ export default async function PosicionFichaPage({
   // ----- Tab: Productos -----
   const productosTab =
     stockRows.length > 0 ? (
-      <Table>
+      <div className="space-y-4">
+        <p className="text-sm text-muted-foreground">
+          El stock se mueve junto con su unidad logística. Para mover
+          mercadería, usá el tab Unidades logísticas y mové la UL completa.
+        </p>
+        <Table>
         <TableHeader>
           <TableRow>
             <TableHead>Producto</TableHead>
@@ -322,6 +412,7 @@ export default async function PosicionFichaPage({
           ))}
         </TableBody>
       </Table>
+      </div>
     ) : (
       <EmptyState
         icon={Boxes}
@@ -331,55 +422,121 @@ export default async function PosicionFichaPage({
     );
 
   // ----- Tab: Movimientos -----
-  const movimientosTab =
-    movementRows.length > 0 ? (
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Fecha</TableHead>
-            <TableHead>Tipo</TableHead>
-            <TableHead>Desde</TableHead>
-            <TableHead>Hacia</TableHead>
-            <TableHead className="text-right">Cantidad</TableHead>
-            <TableHead>Notas</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {movementRows.map((m) => (
-            <TableRow key={m.id}>
-              <TableCell>{formatDateTime(m.date_time)}</TableCell>
-              <TableCell>
-                <Badge variant="secondary">
-                  {MOVEMENT_TYPE_LABELS[m.movement_type]}
-                </Badge>
-              </TableCell>
-              <TableCell className="text-muted-foreground">
-                {m.from_position_id
-                  ? positionPrimaryLabel(posCodeMap.get(m.from_position_id))
-                  : "—"}
-              </TableCell>
-              <TableCell className="text-muted-foreground">
-                {m.to_position_id
-                  ? positionPrimaryLabel(posCodeMap.get(m.to_position_id))
-                  : "—"}
-              </TableCell>
-              <TableCell className="text-right">
-                {m.quantity != null ? Number(m.quantity) : "—"}
-              </TableCell>
-              <TableCell className="text-muted-foreground">
-                {orDash(m.notes)}
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    ) : (
-      <EmptyState
-        icon={ArrowLeftRight}
-        title="Sin movimientos"
-        description="Todavía no hay movimientos que entren o salgan de esta posición."
-      />
-    );
+  const movimientosTab = (
+    <div className="space-y-6">
+      {internalMovements.length > 0 && (
+        <div className="space-y-2">
+          <h3 className="text-sm font-semibold">Movimientos internos</h3>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Fecha</TableHead>
+                <TableHead>Unidad logística</TableHead>
+                <TableHead>Desde</TableHead>
+                <TableHead>Hacia</TableHead>
+                <TableHead className="text-right">Cantidad física</TableHead>
+                <TableHead>Notas</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {internalMovements.map((m) => {
+                const lu = m.logistic_unit_id
+                  ? luMoveMap.get(m.logistic_unit_id)
+                  : null;
+                const qty =
+                  m.quantity != null ? Number(m.quantity) : null;
+                const qtyLabel =
+                  qty != null
+                    ? `${qty} ${
+                        lu
+                          ? LOGISTIC_UNIT_TYPE_LABELS[lu.type].toLowerCase()
+                          : "unidad"
+                      }`
+                    : "—";
+
+                return (
+                <TableRow key={m.id}>
+                  <TableCell>{formatDateTime(m.date_time)}</TableCell>
+                  <TableCell className="font-mono text-sm">
+                    {lu?.code ?? "—"}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {m.from_position_id
+                      ? positionPrimaryLabel(posCodeMap.get(m.from_position_id))
+                      : "—"}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {m.to_position_id
+                      ? positionPrimaryLabel(posCodeMap.get(m.to_position_id))
+                      : "—"}
+                  </TableCell>
+                  <TableCell className="text-right text-muted-foreground">
+                    {qtyLabel}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {orDash(m.notes)}
+                  </TableCell>
+                </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      {movementRows.length > 0 ? (
+        <div className="space-y-2">
+          <h3 className="text-sm font-semibold">Todos los movimientos</h3>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Fecha</TableHead>
+                <TableHead>Tipo</TableHead>
+                <TableHead>Desde</TableHead>
+                <TableHead>Hacia</TableHead>
+                <TableHead className="text-right">Cantidad</TableHead>
+                <TableHead>Notas</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {movementRows.map((m) => (
+                <TableRow key={m.id}>
+                  <TableCell>{formatDateTime(m.date_time)}</TableCell>
+                  <TableCell>
+                    <Badge variant="secondary">
+                      {MOVEMENT_TYPE_LABELS[m.movement_type]}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {m.from_position_id
+                      ? positionPrimaryLabel(posCodeMap.get(m.from_position_id))
+                      : "—"}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {m.to_position_id
+                      ? positionPrimaryLabel(posCodeMap.get(m.to_position_id))
+                      : "—"}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {m.quantity != null ? Number(m.quantity) : "—"}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {orDash(m.notes)}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      ) : (
+        <EmptyState
+          icon={ArrowLeftRight}
+          title="Sin movimientos"
+          description="Todavía no hay movimientos que entren o salgan de esta posición."
+        />
+      )}
+    </div>
+  );
 
   // ----- Tab: Órdenes relacionadas -----
   const ordenesTab =

@@ -119,12 +119,12 @@ function computeNextStep(status: InboundOrderStatus, flow: Flow): NextStep {
   }
   if (flow.needClassification > 0) {
     return {
-      title: "Clasificar unidades",
-      text: "Hay unidades que requieren clasificación, desconsolidación, armado o reembalaje antes de ubicarse.",
+      title: "Procesar en clasificación",
+      text: "Hay unidades con contenido cargado que deben procesarse (clasificación, desconsolidación, armado o reembalaje) antes de ubicarse.",
       action: {
-        kind: "link",
-        href: "/clasificacion",
-        label: "Ir a clasificación",
+        kind: "tab",
+        hash: "unidades",
+        label: "Ir a unidades recibidas",
       },
     };
   }

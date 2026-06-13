@@ -12,6 +12,7 @@ import {
   AlertTriangle,
   PackageMinus,
   SlidersHorizontal,
+  SplitSquareVertical,
 } from "lucide-react";
 import {
   createReceivedUnitAction,
@@ -26,14 +27,19 @@ import type {
   InboundOrderDischargeRow,
 } from "@/lib/types/database";
 import {
-  RECEIVED_UNIT_TYPE_LABELS,
-  VISIBLE_CONTENT_STATUSES,
-  CONTENT_STATUS_REVIEW_HELP,
   positionPrimaryLabel,
   positionSelectLabel,
   isOperationalZoneCode,
   formatReceivedUnitHeading,
+  RECEIVED_UNIT_TYPE_LABELS,
+  VISIBLE_CONTENT_STATUSES,
+  CONTENT_STATUS_REVIEW_HELP,
 } from "@/lib/constants";
+import {
+  canShowProcessButton,
+  type ProcessableUnit,
+} from "@/lib/processing/processable-unit";
+import { ProcessUnitWizard } from "@/app/(app)/clasificacion/_components/process-unit-wizard";
 import { RECEIVED_UNIT_TYPES } from "@/lib/validation/inbound";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -72,6 +78,8 @@ export function ReceivedUnitsSection({
   discharge,
   processedUnitIds,
   hasContentByUnitId,
+  locatedQtyByUnitId,
+  processableByUnitId,
   staff,
 }: {
   orderId: string;
@@ -80,6 +88,8 @@ export function ReceivedUnitsSection({
   discharge: InboundOrderDischargeRow | null;
   processedUnitIds: string[];
   hasContentByUnitId: Record<string, boolean>;
+  locatedQtyByUnitId: Record<string, number>;
+  processableByUnitId: Record<string, ProcessableUnit>;
   staff: boolean;
 }) {
   const router = useRouter();
@@ -92,6 +102,9 @@ export function ReceivedUnitsSection({
 
   const [contentStatus, setContentStatus] = useState("unknown");
   const [reqTarget, setReqTarget] = useState<ReceivedUnitRow | null>(null);
+  const [processTarget, setProcessTarget] = useState<ProcessableUnit | null>(
+    null
+  );
   const processedSet = new Set(processedUnitIds);
 
   const defaultPosition =
@@ -315,7 +328,37 @@ export function ReceivedUnitsSection({
                 </TableCell>
                 {staff && (
                   <TableCell>
-                    <div className="flex items-center justify-end gap-1">
+                    <div className="flex flex-wrap items-center justify-end gap-1">
+                      {canShowProcessButton(
+                        u,
+                        locatedQtyByUnitId[u.id] ?? 0
+                      ) && (
+                        <div className="flex flex-col items-end gap-1">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={!hasContentByUnitId[u.id]}
+                            title={
+                              !hasContentByUnitId[u.id]
+                                ? "Primero cargá el contenido antes de procesar."
+                                : undefined
+                            }
+                            onClick={() => {
+                              const target = processableByUnitId[u.id];
+                              if (target) setProcessTarget(target);
+                            }}
+                          >
+                            <SplitSquareVertical className="h-4 w-4" />
+                            Procesar
+                          </Button>
+                          {!hasContentByUnitId[u.id] && (
+                            <span className="max-w-[11rem] text-right text-xs text-muted-foreground">
+                              Primero cargá el contenido antes de procesar.
+                            </span>
+                          )}
+                        </div>
+                      )}
                       <Button
                         type="button"
                         variant="outline"
@@ -346,6 +389,11 @@ export function ReceivedUnitsSection({
         orderId={orderId}
         processed={reqTarget ? processedSet.has(reqTarget.id) : false}
         onClose={() => setReqTarget(null)}
+      />
+
+      <ProcessUnitWizard
+        unit={processTarget}
+        onClose={() => setProcessTarget(null)}
       />
     </div>
   );

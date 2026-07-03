@@ -63,6 +63,7 @@ export default async function CierreDiaPage({
     { data: snapshot },
     { data: clients },
     { data: monthRowsAll },
+    { data: latestClose },
   ] = await Promise.all([
     supabase
       .from("daily_position_occupancy")
@@ -76,7 +77,25 @@ export default async function CierreDiaPage({
       .gte("date", monthBounds.start)
       .lte("date", monthBounds.end)
       .order("date", { ascending: false }),
+    supabase
+      .from("daily_position_occupancy")
+      .select("date")
+      .order("date", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ]);
+
+  const lastCloseDate = latestClose?.date ?? null;
+  let lastCloseOccupiedPositions = 0;
+  if (lastCloseDate) {
+    const { data: lastCloseRows } = await supabase
+      .from("daily_position_occupancy")
+      .select("position_id")
+      .eq("date", lastCloseDate);
+    lastCloseOccupiedPositions = new Set(
+      (lastCloseRows ?? []).map((r) => r.position_id)
+    ).size;
+  }
 
   const clientMap = new Map((clients ?? []).map((c) => [c.id, c.nombre]));
   const clientOptions = (clients ?? []).map((c) => ({
@@ -148,11 +167,43 @@ export default async function CierreDiaPage({
           <CardContent className="space-y-4 pt-6">
             <h3 className="text-sm font-semibold">Cierre diario</h3>
             <p className="text-sm text-muted-foreground">
-              Este cierre registra las posiciones usadas por cliente para calcular
-              estadía mensual. No modifica stock ni movimientos.
+              Este cierre registra las posiciones rack usadas por cliente para
+              calcular estadía mensual. No modifica stock ni movimientos.
             </p>
+
+            {lastCloseDate ? (
+              <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm">
+                <p>
+                  <span className="font-medium">Último día cerrado:</span>{" "}
+                  {formatDate(lastCloseDate)} ·{" "}
+                  <span className="font-medium">
+                    {lastCloseOccupiedPositions} posición
+                    {lastCloseOccupiedPositions === 1 ? "" : "es"} ocupada
+                    {lastCloseOccupiedPositions === 1 ? "" : "s"}
+                  </span>
+                </p>
+                {missingCloseDays > 0 && (
+                  <p className="mt-1 text-amber-800">
+                    Faltan {missingCloseDays} día
+                    {missingCloseDays === 1 ? "" : "s"} de cierre en{" "}
+                    {formatMonthLabel(mes)}.
+                  </p>
+                )}
+              </div>
+            ) : (
+              <p className="rounded-md border border-dashed px-3 py-2 text-sm text-muted-foreground">
+                Todavía no hay cierres registrados. El cron automático corre a
+                las 19:00 hs Argentina; podés ejecutar un cierre manual como
+                respaldo.
+              </p>
+            )}
+
             <Suspense fallback={<p className="text-sm text-muted-foreground">Cargando…</p>}>
-              <DailyCloseControls defaultDate={fecha} staff={staff} />
+              <DailyCloseControls
+                defaultDate={fecha}
+                suggestedManualDate={todayInArgentina()}
+                staff={staff}
+              />
             </Suspense>
           </CardContent>
         </Card>

@@ -41,6 +41,7 @@ export async function updateSession(request: NextRequest) {
   const isPublicAsset =
     pathname.startsWith("/_next") ||
     pathname.startsWith("/api/auth") ||
+    pathname.startsWith("/api/cron/") ||
     pathname === "/favicon.ico";
 
   // Sin sesión y en ruta privada -> al login

@@ -10,9 +10,11 @@ import { Button } from "@/components/ui/button";
 
 export function DailyCloseControls({
   defaultDate,
+  suggestedManualDate,
   staff,
 }: {
   defaultDate: string;
+  suggestedManualDate: string;
   staff: boolean;
 }) {
   const router = useRouter();
@@ -47,7 +49,7 @@ export function DailyCloseControls({
           ? ` · ${res.mixedPositions} posición(es) con mezcla de clientes (revisar).`
           : "";
       setSuccess(
-        `Cierre generado: ${res.rowsWritten ?? 0} posición(es)-día registradas.${mixed}`
+        `Cierre manual ejecutado (${res.date}): ${res.rowsWritten ?? 0} posición(es)-día registradas.${mixed}`
       );
       router.refresh();
     });
@@ -55,9 +57,15 @@ export function DailyCloseControls({
 
   return (
     <div className="space-y-4">
+      <p className="text-sm text-muted-foreground">
+        El cierre automático corre todos los días a las 19:00 hs Argentina y
+        procesa el día en curso. Este botón sirve como respaldo o reintento si
+        falló el cron o hay que regenerar una fecha.
+      </p>
+
       <div className="flex flex-wrap items-end gap-4">
         <div className="space-y-2">
-          <Label htmlFor="cierre-fecha">Fecha del cierre</Label>
+          <Label htmlFor="cierre-fecha">Fecha a procesar</Label>
           <Input
             id="cierre-fecha"
             type="date"
@@ -65,6 +73,9 @@ export function DailyCloseControls({
             onChange={(e) => onDateChange(e.target.value)}
             className="w-auto min-w-[11rem]"
           />
+          <p className="text-xs text-muted-foreground">
+            Sugerido para reintento: {suggestedManualDate} (día en curso).
+          </p>
         </div>
         {staff && (
           <Button type="button" onClick={onGenerate} disabled={isPending || !date}>
@@ -73,15 +84,15 @@ export function DailyCloseControls({
             ) : (
               <CalendarCheck className="h-4 w-4" />
             )}
-            Generar cierre del día
+            Ejecutar cierre manual
           </Button>
         )}
       </div>
 
       {!staff && (
         <p className="text-sm text-muted-foreground">
-          Solo staff puede generar el cierre. Podés consultar los snapshots ya
-          registrados.
+          Solo staff puede ejecutar el cierre manual. Podés consultar los
+          snapshots ya registrados.
         </p>
       )}
 

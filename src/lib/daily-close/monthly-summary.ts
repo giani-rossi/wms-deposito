@@ -32,6 +32,15 @@ export function todayInArgentina(): string {
   }).format(new Date());
 }
 
+/** Día anterior YYYY-MM-DD en America/Argentina/Buenos_Aires. */
+export function yesterdayInArgentina(): string {
+  const today = todayInArgentina();
+  const [y, m, d] = today.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() - 1);
+  return dt.toISOString().slice(0, 10);
+}
+
 /** Mes actual YYYY-MM en Argentina. */
 export function currentMonthInArgentina(): string {
   return todayInArgentina().slice(0, 7);

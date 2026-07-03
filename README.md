@@ -1,5 +1,7 @@
 # WMS Depósito (MVP)
 
+[![CI](https://github.com/giani-rossi/wms-deposito/actions/workflows/ci.yml/badge.svg)](https://github.com/giani-rossi/wms-deposito/actions/workflows/ci.yml)
+
 Sistema de gestión de depósito (Warehouse Management System) para una operación
 logística chica. Construido con un stack simple y confiable, **sin Prisma, sin
 backend separado y sin microservicios**: Next.js habla directo con Supabase

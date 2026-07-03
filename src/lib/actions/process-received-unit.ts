@@ -15,6 +15,7 @@ import {
   processReceivedUnitSchema,
   type ProcessingOperationType,
 } from "@/lib/validation/processing";
+import { buildProductBalance, balancesMatch } from "@/lib/processing/balance";
 import type {
   BillableServiceType,
   ContentStatus,
@@ -24,37 +25,11 @@ import type {
 type ActionResult = { ok: boolean; error?: string; codes?: string[] };
 
 const FLOOR_INBOUND_CODE = "FLOOR-INBOUND-01";
-const QTY_EPS = 0.001;
 
 function operationMatchesMovement(
   op: ProcessingOperationType
 ): MovementType & BillableServiceType {
   return op;
-}
-
-function buildBalance(
-  lines: { product_id: string; quantity: number }[]
-): Map<string, number> {
-  const map = new Map<string, number>();
-  for (const line of lines) {
-    map.set(
-      line.product_id,
-      (map.get(line.product_id) ?? 0) + Number(line.quantity)
-    );
-  }
-  return map;
-}
-
-function balancesMatch(
-  origin: Map<string, number>,
-  result: Map<string, number>
-): boolean {
-  if (origin.size !== result.size) return false;
-  for (const [productId, qty] of origin) {
-    const out = result.get(productId) ?? 0;
-    if (Math.abs(qty - out) > QTY_EPS) return false;
-  }
-  return true;
 }
 
 async function hasExistingBillableForOperation(
@@ -142,7 +117,7 @@ export async function processReceivedUnitAction(
     };
   }
 
-  const originBalance = buildBalance(
+  const originBalance = buildProductBalance(
     originContents.map((c) => ({
       product_id: c.product_id,
       quantity: Number(c.quantity),
@@ -165,7 +140,7 @@ export async function processReceivedUnitAction(
     }
   }
 
-  const resultBalance = buildBalance(resultLines);
+  const resultBalance = buildProductBalance(resultLines);
   if (!balancesMatch(originBalance, resultBalance)) {
     return {
       ok: false,

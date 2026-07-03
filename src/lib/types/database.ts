@@ -735,6 +735,9 @@ export interface Database {
           p_user_id: string;
           p_destination: string;
           p_lines: { content_id: string; quantity: number }[];
+          p_target_position_id?: string | null;
+          p_override?: boolean;
+          p_notes?: string | null;
         };
         Returns: Json;
       };

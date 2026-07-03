@@ -14,6 +14,7 @@ import {
 import { moveLogisticUnitAction } from "@/lib/actions/internal-movement";
 import {
   splitLogisticUnitAction,
+  type SplitDestination,
   type SplitLogisticUnitResult,
 } from "@/lib/actions/split-logistic-unit";
 import {
@@ -181,6 +182,10 @@ export function PositionUnitsWithMove({
 
       <SplitLogisticUnitModal
         unit={splitTarget}
+        destinations={
+          splitTarget ? (destinationsByClient[splitTarget.clientId] ?? []) : []
+        }
+        currentPositionId={currentPositionId}
         onClose={() => setSplitTarget(null)}
       />
     </>
@@ -372,24 +377,60 @@ type SplitSuccess = Extract<SplitLogisticUnitResult, { ok: true }>;
 
 function SplitLogisticUnitModal({
   unit,
+  destinations,
+  currentPositionId,
   onClose,
 }: {
   unit: MoveableUnit | null;
+  destinations: MoveDestinationOption[];
+  currentPositionId: string;
   onClose: () => void;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [destination, setDestination] = useState<"relocate" | "outbound">(
-    "relocate"
-  );
+  const [destination, setDestination] = useState<SplitDestination>("relocate");
+  const [rackDestId, setRackDestId] = useState("");
+  const [override, setOverride] = useState(false);
+  const [notes, setNotes] = useState("");
   const [quantities, setQuantities] = useState<Record<string, string>>({});
   const [success, setSuccess] = useState<SplitSuccess | null>(null);
+
+  const rackOptions = useMemo(
+    () => destinations.filter((d) => d.id !== currentPositionId),
+    [destinations, currentPositionId]
+  );
+
+  const selectedRack = rackDestId
+    ? rackOptions.find((d) => d.id === rackDestId)
+    : null;
+  const needsOverride = Boolean(
+    destination === "rack" && selectedRack?.requiresOverride
+  );
+  const needsNote = Boolean(needsOverride && override);
+  const isInformativeWarning =
+    destination === "rack" &&
+    (selectedRack?.kind === "unassigned_free" ||
+      selectedRack?.kind === "same_client_occupied");
+  const isOverrideWarning = Boolean(
+    destination === "rack" &&
+      selectedRack?.requiresOverride &&
+      selectedRack.warningMessage
+  );
+
+  const confirmDisabled =
+    isPending ||
+    (destination === "rack" && !rackDestId) ||
+    (needsOverride && !override) ||
+    (needsOverride && override && !notes.trim());
 
   function close() {
     if (isPending) return;
     setError(null);
     setDestination("relocate");
+    setRackDestId("");
+    setOverride(false);
+    setNotes("");
     setQuantities({});
     setSuccess(null);
     onClose();
@@ -425,12 +466,31 @@ function SplitLogisticUnitModal({
       }
     }
 
+    if (destination === "rack" && !rackDestId) {
+      setError("Elegí la posición rack destino.");
+      return;
+    }
+    if (needsOverride && !override) {
+      setError("Confirmá el override para fraccionar a esta posición.");
+      return;
+    }
+    if (needsOverride && override && !notes.trim()) {
+      setError(
+        "Debés ingresar una nota obligatoria para confirmar este fraccionamiento."
+      );
+      return;
+    }
+
     setError(null);
     startTransition(async () => {
       const res = await splitLogisticUnitAction({
         logistic_unit_id: unit.id,
         destination,
         lines,
+        target_position_id:
+          destination === "rack" ? rackDestId : null,
+        override: destination === "rack" ? override : false,
+        notes: destination === "rack" ? notes.trim() || null : null,
       });
       if (!res.ok) {
         setError(res.error ?? "No se pudo fraccionar la unidad.");
@@ -468,7 +528,11 @@ function SplitLogisticUnitModal({
             >
               Cancelar
             </Button>
-            <Button type="button" onClick={onConfirm} disabled={isPending}>
+            <Button
+              type="button"
+              onClick={onConfirm}
+              disabled={confirmDisabled}
+            >
               {isPending ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
@@ -515,11 +579,19 @@ function SplitLogisticUnitModal({
                 </p>
               )}
             </div>
-          ) : (
+          ) : success.destination === "outbound" ? (
             <p className="text-sm text-muted-foreground">
               La UL hija quedó en{" "}
               <span className="font-mono">FLOOR-OUTBOUND-01</span>. Lista en
               piso retiro para futura orden de retiro.
+            </p>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              La UL hija quedó ubicada directamente en{" "}
+              <span className="font-mono">
+                {success.targetPositionCode ?? "rack"}
+              </span>
+              .
             </p>
           )}
         </div>
@@ -577,9 +649,13 @@ function SplitLogisticUnitModal({
             <Select
               id="split-destination"
               value={destination}
-              onChange={(e) =>
-                setDestination(e.target.value as "relocate" | "outbound")
-              }
+              onChange={(e) => {
+                setDestination(e.target.value as SplitDestination);
+                setRackDestId("");
+                setOverride(false);
+                setNotes("");
+                setError(null);
+              }}
             >
               <option value="relocate">
                 Reubicar después (FLOOR-INBOUND-01)
@@ -587,8 +663,78 @@ function SplitLogisticUnitModal({
               <option value="outbound">
                 Preparar retiro (FLOOR-OUTBOUND-01)
               </option>
+              <option value="rack">Ubicar directamente en rack</option>
             </Select>
           </div>
+
+          {destination === "rack" && (
+            <>
+              <div className="space-y-2">
+                <Label htmlFor="split-rack-dest">Posición rack destino</Label>
+                <Select
+                  id="split-rack-dest"
+                  value={rackDestId}
+                  onChange={(e) => {
+                    setRackDestId(e.target.value);
+                    setOverride(false);
+                    setNotes("");
+                    setError(null);
+                  }}
+                >
+                  <option value="">Seleccionar…</option>
+                  {rackOptions.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.optionLabel}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+
+              {selectedRack?.warningMessage && isInformativeWarning && (
+                <p className="flex items-start gap-2 rounded-md bg-blue-50 px-3 py-2 text-xs text-blue-900">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  {selectedRack.warningMessage}
+                </p>
+              )}
+
+              {isOverrideWarning && (
+                <p className="flex items-start gap-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  {selectedRack?.warningMessage} Requiere override y nota
+                  obligatoria.
+                </p>
+              )}
+
+              {needsOverride && (
+                <label className="flex items-center gap-3 rounded-md border p-3">
+                  <Checkbox
+                    checked={override}
+                    onChange={(e) => setOverride(e.target.checked)}
+                  />
+                  <span className="text-sm">
+                    Confirmo fraccionar a esta posición (override staff)
+                  </span>
+                </label>
+              )}
+
+              <div className="space-y-2">
+                <Label htmlFor="split-notes">
+                  Notas
+                  {needsOverride
+                    ? override
+                      ? " (obligatorias)"
+                      : " (obligatorias si confirmás override)"
+                    : " (opcional)"}
+                </Label>
+                <Textarea
+                  id="split-notes"
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Motivo del fraccionamiento, observaciones…"
+                />
+              </div>
+            </>
+          )}
 
           {error && (
             <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">

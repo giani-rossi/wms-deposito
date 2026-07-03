@@ -23,6 +23,7 @@ import {
   positionPrimaryLabel,
 } from "@/lib/constants";
 import { formatDate, formatDateTime, orDash } from "@/lib/format";
+import { classifyMoveDestination } from "@/lib/movements/classify-move-destination";
 import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState } from "@/components/layout/empty-state";
 import { Tabs } from "@/components/ui/tabs";
@@ -277,26 +278,21 @@ export default async function PosicionFichaPage({
     return (allRackPositions ?? []).map((p) => {
       const occ = posOccupancy.get(p.id);
       const occupantIds = occ ? [...occ.clientIds] : [];
-      const assignedToClient = p.assigned_client_id === clientId;
-      const otherClient =
-        (p.assigned_client_id != null && p.assigned_client_id !== clientId) ||
-        occupantIds.some((c) => c !== clientId);
-      const sameClientWithUnits =
-        !otherClient &&
-        occupantIds.some((c) => c === clientId) &&
-        (occ?.count ?? 0) > 0;
-      const blocked = p.status === "blocked" || p.status === "incident";
-      const free =
-        p.assigned_client_id == null && (occ?.count ?? 0) === 0;
+      const classified = classifyMoveDestination({
+        position: {
+          code: p.code,
+          status: p.status,
+          assigned_client_id: p.assigned_client_id,
+        },
+        unitClientId: clientId,
+        occupantClientIds: occupantIds,
+        getClientName: (id) => clientMap.get(id) ?? null,
+      });
       return {
         id: p.id,
         code: p.code,
         status: p.status,
-        assignedToClient,
-        free,
-        otherClient,
-        blocked,
-        sameClientWithUnits,
+        ...classified,
       };
     });
   }

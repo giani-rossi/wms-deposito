@@ -18,8 +18,11 @@ import {
 } from "@/lib/actions/split-logistic-unit";
 import {
   LOGISTIC_UNIT_TYPE_LABELS,
-  positionSelectLabel,
 } from "@/lib/constants";
+import type {
+  ClassifyMoveDestinationResult,
+  MoveDestinationKind,
+} from "@/lib/movements/classify-move-destination";
 import type { LogisticUnitType, PositionStatus } from "@/lib/types/database";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
@@ -42,12 +45,9 @@ export type MoveDestinationOption = {
   id: string;
   code: string;
   status: PositionStatus;
-  assignedToClient: boolean;
-  free: boolean;
-  otherClient: boolean;
-  blocked: boolean;
-  sameClientWithUnits: boolean;
-};
+} & ClassifyMoveDestinationResult;
+
+export type { MoveDestinationKind };
 
 export type SplittableContentLine = {
   id: string;
@@ -211,11 +211,14 @@ function MoveLogisticUnitModal({
   );
 
   const selected = destId ? options.find((d) => d.id === destId) : null;
-  const needsOverride = Boolean(
-    selected && (selected.blocked || selected.otherClient)
+  const needsOverride = Boolean(selected?.requiresOverride);
+  const needsNote = Boolean(selected?.requiresOverride && override);
+  const isInformativeWarning =
+    selected?.kind === "unassigned_free" ||
+    selected?.kind === "same_client_occupied";
+  const isOverrideWarning = Boolean(
+    selected?.requiresOverride && selected.warningMessage
   );
-  const needsNote = Boolean(selected?.otherClient && override);
-  const sameClientWarning = Boolean(selected?.sameClientWithUnits);
 
   function close() {
     setError(null);
@@ -235,7 +238,9 @@ function MoveLogisticUnitModal({
       return;
     }
     if (needsNote && !notes.trim()) {
-      setError("La nota es obligatoria al mezclar clientes.");
+      setError(
+        "Debés ingresar una nota obligatoria para confirmar este movimiento."
+      );
       return;
     }
 
@@ -304,34 +309,23 @@ function MoveLogisticUnitModal({
             <option value="">Seleccionar…</option>
             {options.map((d) => (
               <option key={d.id} value={d.id}>
-                {positionSelectLabel(d.code)}
-                {d.blocked ? " · bloqueada/revisión" : ""}
-                {d.otherClient ? " · otro cliente" : ""}
+                {d.optionLabel}
               </option>
             ))}
           </Select>
         </div>
 
-        {selected?.blocked && (
-          <p className="flex items-start gap-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-            La posición destino está bloqueada o en revisión. Solo staff puede
-            confirmar con override.
-          </p>
-        )}
-
-        {selected?.otherClient && (
-          <p className="flex items-start gap-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-            Hay mercadería de otro cliente en el destino. Requiere override y
-            nota obligatoria.
-          </p>
-        )}
-
-        {sameClientWarning && !selected?.otherClient && (
+        {selected?.warningMessage && isInformativeWarning && (
           <p className="flex items-start gap-2 rounded-md bg-blue-50 px-3 py-2 text-xs text-blue-900">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-            El destino ya tiene mercadería del mismo cliente. Podés continuar.
+            {selected.warningMessage}
+          </p>
+        )}
+
+        {isOverrideWarning && (
+          <p className="flex items-start gap-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            {selected?.warningMessage} Requiere override y nota obligatoria.
           </p>
         )}
 
@@ -349,7 +343,12 @@ function MoveLogisticUnitModal({
 
         <div className="space-y-2">
           <Label htmlFor="move-notes">
-            Notas{needsNote ? " (obligatorias)" : " (opcional)"}
+            Notas
+            {needsOverride
+              ? override
+                ? " (obligatorias)"
+                : " (obligatorias si confirmás override)"
+              : " (opcional)"}
           </Label>
           <Textarea
             id="move-notes"

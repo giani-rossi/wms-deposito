@@ -3,6 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireProfile, isStaff } from "@/lib/auth";
+import {
+  classifyMoveDestination,
+  moveDestinationOverrideRequiredMessage,
+} from "@/lib/movements/classify-move-destination";
 import { internalMoveSchema } from "@/lib/validation/internal-movement";
 
 type ActionResult = { ok: boolean; error?: string };
@@ -128,47 +132,38 @@ export async function moveLogisticUnitAction(
     .eq("current_position_id", to_position_id)
     .eq("status", "located");
 
-  const hasOtherClient =
-    (toPos.assigned_client_id != null &&
-      toPos.assigned_client_id !== unit.client_id) ||
-    (occupants ?? []).some((o) => o.client_id !== unit.client_id);
-  const isBlocked =
-    toPos.status === "blocked" || toPos.status === "incident";
+  const occupantClientIds = (occupants ?? []).map((o) => o.client_id);
 
-  if (isBlocked && !override) {
+  const destination = classifyMoveDestination({
+    position: {
+      code: toPos.code,
+      status: toPos.status,
+      assigned_client_id: toPos.assigned_client_id,
+    },
+    unitClientId: unit.client_id,
+    occupantClientIds,
+  });
+
+  if (destination.requiresOverride && !override) {
+    return {
+      ok: false,
+      error: `${moveDestinationOverrideRequiredMessage(destination)} Requiere confirmación de staff (override).`,
+    };
+  }
+
+  if (destination.requiresOverride && override && !notes) {
     return {
       ok: false,
       error:
-        "La posición destino está bloqueada o en revisión. Requiere confirmación de staff (override).",
+        "Debés ingresar una nota obligatoria para confirmar este movimiento.",
     };
-  }
-  if (hasOtherClient) {
-    if (!override) {
-      return {
-        ok: false,
-        error:
-          "La posición destino tiene mercadería de otro cliente. Requiere confirmación de staff (override).",
-      };
-    }
-    if (!notes) {
-      return {
-        ok: false,
-        error:
-          "Debés ingresar una nota obligatoria al mover mercadería a una posición con otro cliente.",
-      };
-    }
   }
 
   const quantity = await quantityForLogisticUnit(supabase, unit.id);
 
   let movementNotes = notes ?? "Movimiento interno entre posiciones";
-  if (override) {
-    if (isBlocked) {
-      movementNotes += " · Override: destino bloqueado/en revisión";
-    }
-    if (hasOtherClient) {
-      movementNotes += " · Override: mezcla de clientes en destino";
-    }
+  if (override && destination.overrideNoteFragments.length > 0) {
+    movementNotes += ` · ${destination.overrideNoteFragments.join(" · ")}`;
   }
 
   const { error: moveErr } = await supabase.from("movements").insert({

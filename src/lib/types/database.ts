@@ -372,10 +372,28 @@ export interface MovementRow {
   created_at: string;
 }
 
+export type OutboundOrderLineStatus =
+  | "pending"
+  | "prepared"
+  | "loaded"
+  | "cancelled";
+
+export interface OutboundOrderLogisticUnitRow extends Timestamps {
+  id: string;
+  outbound_order_id: string;
+  logistic_unit_id: string;
+  line_status: OutboundOrderLineStatus;
+  prepared_at: string | null;
+  loaded_at: string | null;
+  preparation_movement_id: string | null;
+  load_movement_id: string | null;
+}
+
 export interface OutboundOrderRow extends Timestamps {
   id: string;
   client_id: string;
   date_time: string;
+  requested_date: string | null;
   document_number: string | null;
   ai_extracted_data_json: Json | null;
   human_confirmed_data_json: Json | null;
@@ -668,8 +686,32 @@ export interface Database {
       };
       outbound_orders: {
         Row: Indexed<OutboundOrderRow>;
-        Insert: InsertOf<OutboundOrderRow, AutoCols | "date_time" | "status">;
+        Insert: InsertOf<
+          OutboundOrderRow,
+          | AutoCols
+          | "date_time"
+          | "status"
+          | "requested_date"
+          | "document_number"
+          | "destination"
+          | "truck_company"
+          | "driver_name"
+          | "license_plate"
+          | "ai_extracted_data_json"
+          | "human_confirmed_data_json"
+          | "notes"
+          | "created_by"
+        >;
         Update: Partial<OutboundOrderRow>;
+        Relationships: [];
+      };
+      outbound_order_logistic_units: {
+        Row: Indexed<OutboundOrderLogisticUnitRow>;
+        Insert: InsertOf<
+          OutboundOrderLogisticUnitRow,
+          AutoCols | "line_status" | "prepared_at" | "loaded_at" | "preparation_movement_id" | "load_movement_id"
+        >;
+        Update: Partial<OutboundOrderLogisticUnitRow>;
         Relationships: [];
       };
       outbound_order_items: {
@@ -728,6 +770,18 @@ export interface Database {
       next_logistic_unit_code: {
         Args: Record<string, never>;
         Returns: string;
+      };
+      next_outbound_order_code: {
+        Args: Record<string, never>;
+        Returns: string;
+      };
+      prepare_outbound_order: {
+        Args: { p_order_id: string; p_user_id: string };
+        Returns: Json;
+      };
+      confirm_outbound_load: {
+        Args: { p_order_id: string; p_user_id: string };
+        Returns: Json;
       };
       split_logistic_unit: {
         Args: {

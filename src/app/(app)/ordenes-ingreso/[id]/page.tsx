@@ -227,7 +227,7 @@ export default async function OrdenIngresoFichaPage({
   const readyLogisticUnitRows = (logisticUnits ?? []).filter(
     (lu) =>
       lu.status === "ready_to_locate" &&
-      lu.received_unit_id != null &&
+      (lu.received_unit_id != null || lu.parent_logistic_unit_id != null) &&
       floorInboundId != null &&
       lu.current_position_id === floorInboundId
   );
@@ -262,6 +262,9 @@ export default async function OrdenIngresoFichaPage({
   }
 
   const receivedUnitCodeMap = new Map(unitRows.map((u) => [u.id, u.code]));
+  const logisticUnitCodeMap = new Map(
+    (logisticUnits ?? []).map((lu) => [lu.id, lu.code])
+  );
 
   const readyLogisticUnits = readyLogisticUnitRows.map((lu) => ({
     id: lu.id,
@@ -269,7 +272,9 @@ export default async function OrdenIngresoFichaPage({
     type: lu.type,
     receivedUnitCode: lu.received_unit_id
       ? receivedUnitCodeMap.get(lu.received_unit_id) ?? null
-      : null,
+      : lu.parent_logistic_unit_id
+        ? `Fracción · ${logisticUnitCodeMap.get(lu.parent_logistic_unit_id) ?? "UL"}`
+        : null,
     stockSummary: stockSummaryByLu.get(lu.id) ?? "",
     hasContent: (readyLuContentsRaw ?? []).some((c) => c.logistic_unit_id === lu.id),
   }));

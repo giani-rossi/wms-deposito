@@ -186,6 +186,53 @@ export default async function PosicionFichaPage({
   const relatedOrdersCount =
     (inboundOrders?.length ?? 0) + (outboundOrders?.length ?? 0);
 
+  const unitIds = unitRows.map((u) => u.id);
+  const { data: unitContentsRaw } = unitIds.length
+    ? await supabase
+        .from("logistic_unit_contents")
+        .select("id, logistic_unit_id, product_id, quantity, unit_of_measure, lot")
+        .in("logistic_unit_id", unitIds)
+        .gt("quantity", 0)
+    : { data: [] as const };
+
+  const contentProductIds = [
+    ...new Set((unitContentsRaw ?? []).map((c) => c.product_id)),
+  ];
+  const { data: contentProducts } = contentProductIds.length
+    ? await supabase.from("products").select("id, name, sku").in("id", contentProductIds)
+    : { data: [] as { id: string; name: string; sku: string | null }[] };
+  const contentProductMap = new Map(
+    (contentProducts ?? []).map((p) => [p.id, p])
+  );
+
+  const contentByUnit = new Map<
+    string,
+    {
+      id: string;
+      productId: string;
+      productName: string;
+      sku: string | null;
+      lot: string | null;
+      quantity: number;
+      unitOfMeasure: string | null;
+    }[]
+  >();
+  for (const row of unitContentsRaw ?? []) {
+    const product = contentProductMap.get(row.product_id);
+    const line = {
+      id: row.id,
+      productId: row.product_id,
+      productName: product?.name ?? "Producto",
+      sku: product?.sku ?? null,
+      lot: row.lot,
+      quantity: Number(row.quantity),
+      unitOfMeasure: row.unit_of_measure,
+    };
+    const arr = contentByUnit.get(row.logistic_unit_id) ?? [];
+    arr.push(line);
+    contentByUnit.set(row.logistic_unit_id, arr);
+  }
+
   const posOccupancy = new Map<string, { count: number; clientIds: Set<string> }>();
   for (const lu of allLocatedUnits ?? []) {
     if (!lu.current_position_id) continue;
@@ -206,17 +253,25 @@ export default async function PosicionFichaPage({
     stockByUnit.set(s.logistic_unit_id, arr);
   }
 
-  const moveableUnits = unitRows.map((u) => ({
-    id: u.id,
-    code: u.code,
-    type: u.type,
-    status: u.status,
-    clientName: clientMap.get(u.client_id) ?? "—",
-    entryDate: u.entry_date ? formatDate(u.entry_date) : null,
-    stockSummary: (stockByUnit.get(u.id) ?? []).join(", "),
-    currentPositionCode: position.code,
-    clientId: u.client_id,
-  }));
+  const moveableUnits = unitRows.map((u) => {
+    const contentLines = contentByUnit.get(u.id) ?? [];
+    return {
+      id: u.id,
+      code: u.code,
+      type: u.type,
+      status: u.status,
+      clientName: clientMap.get(u.client_id) ?? "—",
+      entryDate: u.entry_date ? formatDate(u.entry_date) : null,
+      stockSummary: (stockByUnit.get(u.id) ?? []).join(", "),
+      currentPositionCode: position.code,
+      clientId: u.client_id,
+      contentLines,
+      canSplit:
+        position.type === "rack" &&
+        u.status === "located" &&
+        contentLines.length > 0,
+    };
+  });
 
   function buildDestinationsForClient(clientId: string): MoveDestinationOption[] {
     return (allRackPositions ?? []).map((p) => {

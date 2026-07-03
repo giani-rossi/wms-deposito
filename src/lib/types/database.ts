@@ -112,6 +112,7 @@ export type MovementType =
   | "location_assignment"
   | "internal_movement"
   | "consolidation"
+  | "logistic_unit_split"
   | "partial_picking"
   | "rack_down"
   | "outbound_preparation"
@@ -328,6 +329,7 @@ export interface LogisticUnitRow extends Timestamps {
   is_mixed: boolean;
   is_available: boolean;
   requires_partial_picking: boolean;
+  parent_logistic_unit_id: string | null;
 }
 
 export interface LogisticUnitContentRow extends Timestamps {
@@ -618,6 +620,7 @@ export interface Database {
           | "current_position_id"
           | "entry_date"
           | "notes"
+          | "parent_logistic_unit_id"
         >;
         Update: Partial<LogisticUnitRow>;
         Relationships: [];
@@ -725,6 +728,15 @@ export interface Database {
       next_logistic_unit_code: {
         Args: Record<string, never>;
         Returns: string;
+      };
+      split_logistic_unit: {
+        Args: {
+          p_parent_unit_id: string;
+          p_user_id: string;
+          p_destination: string;
+          p_lines: { content_id: string; quantity: number }[];
+        };
+        Returns: Json;
       };
     };
     Enums: {

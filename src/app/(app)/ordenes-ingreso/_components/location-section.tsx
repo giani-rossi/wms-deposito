@@ -286,8 +286,8 @@ export function LocationSection({
             Unidades logísticas listas para ubicar
           </h3>
           <p className="mb-4 mt-1 text-sm text-muted-foreground">
-            Resultantes de clasificación o procesamiento. Se mueven como unidad
-            logística completa desde piso ingreso hacia rack.
+            Resultantes de clasificación, procesamiento o fraccionamiento. Se
+            mueven como unidad logística completa desde piso ingreso hacia rack.
           </p>
           {readyLogisticUnits.length === 0 ? (
             <p className="text-sm text-muted-foreground">

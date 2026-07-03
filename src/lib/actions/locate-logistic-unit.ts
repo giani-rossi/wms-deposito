@@ -39,7 +39,7 @@ export async function locateReadyLogisticUnitAction(
   const { data: unit } = await supabase
     .from("logistic_units")
     .select(
-      "id, code, client_id, inbound_order_id, received_unit_id, type, status, current_position_id"
+      "id, code, client_id, inbound_order_id, received_unit_id, parent_logistic_unit_id, type, status, current_position_id"
     )
     .eq("id", logistic_unit_id)
     .single();
@@ -53,10 +53,11 @@ export async function locateReadyLogisticUnitAction(
       error: "Solo se pueden ubicar unidades logísticas en estado listas para ubicar.",
     };
   }
-  if (!unit.received_unit_id) {
+  if (!unit.received_unit_id && !unit.parent_logistic_unit_id) {
     return {
       ok: false,
-      error: "Esta unidad logística no proviene de un procesamiento de ingreso.",
+      error:
+        "Esta unidad logística no proviene de un procesamiento de ingreso ni de un fraccionamiento.",
     };
   }
 

@@ -1,9 +1,21 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeftRight, Loader2, AlertTriangle, MapPin } from "lucide-react";
+import {
+  ArrowLeftRight,
+  Loader2,
+  AlertTriangle,
+  MapPin,
+  SplitSquareVertical,
+  Check,
+} from "lucide-react";
 import { moveLogisticUnitAction } from "@/lib/actions/internal-movement";
+import {
+  splitLogisticUnitAction,
+  type SplitLogisticUnitResult,
+} from "@/lib/actions/split-logistic-unit";
 import {
   LOGISTIC_UNIT_TYPE_LABELS,
   positionSelectLabel,
@@ -11,6 +23,7 @@ import {
 import type { LogisticUnitType, PositionStatus } from "@/lib/types/database";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
@@ -36,6 +49,16 @@ export type MoveDestinationOption = {
   sameClientWithUnits: boolean;
 };
 
+export type SplittableContentLine = {
+  id: string;
+  productId: string;
+  productName: string;
+  sku: string | null;
+  lot: string | null;
+  quantity: number;
+  unitOfMeasure: string | null;
+};
+
 export type MoveableUnit = {
   id: string;
   code: string;
@@ -46,6 +69,8 @@ export type MoveableUnit = {
   entryDate: string | null;
   stockSummary: string;
   currentPositionCode: string;
+  contentLines: SplittableContentLine[];
+  canSplit: boolean;
 };
 
 export function PositionUnitsWithMove({
@@ -59,10 +84,11 @@ export function PositionUnitsWithMove({
   currentPositionId: string;
   staff: boolean;
 }) {
-  const [target, setTarget] = useState<MoveableUnit | null>(null);
+  const [moveTarget, setMoveTarget] = useState<MoveableUnit | null>(null);
+  const [splitTarget, setSplitTarget] = useState<MoveableUnit | null>(null);
 
-  const destinations = target
-    ? (destinationsByClient[target.clientId] ?? [])
+  const moveDestinations = moveTarget
+    ? (destinationsByClient[moveTarget.clientId] ?? [])
     : [];
 
   if (units.length === 0) {
@@ -75,6 +101,11 @@ export function PositionUnitsWithMove({
 
   return (
     <>
+      <p className="mb-4 text-sm text-muted-foreground">
+        Para mover o retirar una fracción de producto, usá{" "}
+        <strong>Fraccionar</strong>: se crea una unidad logística hija con ese
+        stock. No se mueve producto suelto.
+      </p>
       <Table>
         <TableHeader>
           <TableRow>
@@ -109,15 +140,28 @@ export function PositionUnitsWithMove({
               {staff && (
                 <TableCell className="text-right">
                   {u.status === "located" ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setTarget(u)}
-                    >
-                      <ArrowLeftRight className="h-4 w-4" />
-                      Mover
-                    </Button>
+                    <div className="flex flex-wrap justify-end gap-1">
+                      {u.canSplit && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setSplitTarget(u)}
+                        >
+                          <SplitSquareVertical className="h-4 w-4" />
+                          Fraccionar
+                        </Button>
+                      )}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setMoveTarget(u)}
+                      >
+                        <ArrowLeftRight className="h-4 w-4" />
+                        Mover
+                      </Button>
+                    </div>
                   ) : (
                     <span className="text-xs text-muted-foreground">—</span>
                   )}
@@ -129,10 +173,15 @@ export function PositionUnitsWithMove({
       </Table>
 
       <MoveLogisticUnitModal
-        unit={target}
-        destinations={destinations}
+        unit={moveTarget}
+        destinations={moveDestinations}
         currentPositionId={currentPositionId}
-        onClose={() => setTarget(null)}
+        onClose={() => setMoveTarget(null)}
+      />
+
+      <SplitLogisticUnitModal
+        unit={splitTarget}
+        onClose={() => setSplitTarget(null)}
       />
     </>
   );
@@ -316,6 +365,239 @@ function MoveLogisticUnitModal({
           </p>
         )}
       </div>
+    </Modal>
+  );
+}
+
+type SplitSuccess = Extract<SplitLogisticUnitResult, { ok: true }>;
+
+function SplitLogisticUnitModal({
+  unit,
+  onClose,
+}: {
+  unit: MoveableUnit | null;
+  onClose: () => void;
+}) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const [destination, setDestination] = useState<"relocate" | "outbound">(
+    "relocate"
+  );
+  const [quantities, setQuantities] = useState<Record<string, string>>({});
+  const [success, setSuccess] = useState<SplitSuccess | null>(null);
+
+  function close() {
+    if (isPending) return;
+    setError(null);
+    setDestination("relocate");
+    setQuantities({});
+    setSuccess(null);
+    onClose();
+  }
+
+  function setQty(contentId: string, value: string) {
+    setQuantities((prev) => ({ ...prev, [contentId]: value }));
+  }
+
+  function onConfirm() {
+    if (!unit) return;
+
+    const lines = unit.contentLines
+      .map((line) => ({
+        content_id: line.id,
+        quantity: Number(quantities[line.id] ?? 0),
+      }))
+      .filter((l) => l.quantity > 0);
+
+    if (lines.length === 0) {
+      setError("Indicá al menos una cantidad mayor a cero.");
+      return;
+    }
+
+    for (const line of lines) {
+      const source = unit.contentLines.find((c) => c.id === line.content_id);
+      if (!source) continue;
+      if (line.quantity > source.quantity) {
+        setError(
+          `La cantidad de ${source.productName} supera lo disponible (${source.quantity}).`
+        );
+        return;
+      }
+    }
+
+    setError(null);
+    startTransition(async () => {
+      const res = await splitLogisticUnitAction({
+        logistic_unit_id: unit.id,
+        destination,
+        lines,
+      });
+      if (!res.ok) {
+        setError(res.error ?? "No se pudo fraccionar la unidad.");
+        return;
+      }
+      setSuccess(res);
+      router.refresh();
+    });
+  }
+
+  if (!unit) return null;
+
+  return (
+    <Modal
+      open={unit != null}
+      onClose={close}
+      title={success ? "Fraccionamiento confirmado" : `Fraccionar ${unit.code}`}
+      description={
+        success
+          ? undefined
+          : `${unit.currentPositionCode} · ${unit.clientName} · ${LOGISTIC_UNIT_TYPE_LABELS[unit.type]}`
+      }
+      footer={
+        success ? (
+          <Button type="button" onClick={close}>
+            Cerrar
+          </Button>
+        ) : (
+          <>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={close}
+              disabled={isPending}
+            >
+              Cancelar
+            </Button>
+            <Button type="button" onClick={onConfirm} disabled={isPending}>
+              {isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <SplitSquareVertical className="h-4 w-4" />
+              )}
+              Confirmar fraccionamiento
+            </Button>
+          </>
+        )
+      }
+    >
+      {success ? (
+        <div className="space-y-4">
+          <p className="flex items-start gap-2 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+            <Check className="mt-0.5 h-4 w-4 shrink-0" />
+            Se creó la unidad logística{" "}
+            <span className="font-mono font-medium">{success.childCode}</span>.
+          </p>
+
+          {success.parentExited && (
+            <p className="text-sm text-muted-foreground">
+              La unidad origen quedó vacía y fue marcada como egresada.
+            </p>
+          )}
+
+          {success.destination === "relocate" ? (
+            <div className="space-y-2 text-sm text-muted-foreground">
+              <p>
+                La UL hija quedó en{" "}
+                <span className="font-mono">FLOOR-INBOUND-01</span>, lista para
+                ubicar en rack.
+              </p>
+              {success.inboundOrderId ? (
+                <Link
+                  href={`/ordenes-ingreso/${success.inboundOrderId}#ubicacion`}
+                  className="font-medium text-primary underline-offset-4 hover:underline"
+                >
+                  Ir a ubicación en la orden de ingreso
+                </Link>
+              ) : (
+                <p>
+                  Podés ubicarla desde la orden de ingreso correspondiente al
+                  cliente.
+                </p>
+              )}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              La UL hija quedó en{" "}
+              <span className="font-mono">FLOOR-OUTBOUND-01</span>. Lista en
+              piso retiro para futura orden de retiro.
+            </p>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Separá cantidades del contenido. Se creará una nueva unidad
+            logística hija; la origen conserva el resto en esta posición.
+          </p>
+
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Producto</TableHead>
+                <TableHead>Lote</TableHead>
+                <TableHead className="text-right">Disponible</TableHead>
+                <TableHead className="w-32">Separar</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {unit.contentLines.map((line) => (
+                <TableRow key={line.id}>
+                  <TableCell>
+                    <div className="font-medium">{line.productName}</div>
+                    {line.sku && (
+                      <div className="text-xs text-muted-foreground">
+                        {line.sku}
+                      </div>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {line.lot ?? "—"}
+                  </TableCell>
+                  <TableCell className="text-right text-muted-foreground">
+                    {line.quantity} {line.unitOfMeasure ?? ""}
+                  </TableCell>
+                  <TableCell>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={line.quantity}
+                      step="any"
+                      value={quantities[line.id] ?? ""}
+                      onChange={(e) => setQty(line.id, e.target.value)}
+                      placeholder="0"
+                    />
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+
+          <div className="space-y-2">
+            <Label htmlFor="split-destination">Destino de la UL hija</Label>
+            <Select
+              id="split-destination"
+              value={destination}
+              onChange={(e) =>
+                setDestination(e.target.value as "relocate" | "outbound")
+              }
+            >
+              <option value="relocate">
+                Reubicar después (FLOOR-INBOUND-01)
+              </option>
+              <option value="outbound">
+                Preparar retiro (FLOOR-OUTBOUND-01)
+              </option>
+            </Select>
+          </div>
+
+          {error && (
+            <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {error}
+            </p>
+          )}
+        </div>
+      )}
     </Modal>
   );
 }

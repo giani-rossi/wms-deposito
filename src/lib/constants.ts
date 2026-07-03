@@ -331,6 +331,7 @@ export const MOVEMENT_TYPE_LABELS: Record<MovementType, string> = {
   location_assignment: "Asignación de ubicación",
   internal_movement: "Movimiento interno",
   consolidation: "Consolidación",
+  logistic_unit_split: "Fraccionamiento de UL",
   partial_picking: "Picking parcial",
   rack_down: "Bajada de rack",
   outbound_preparation: "Preparación de retiro",

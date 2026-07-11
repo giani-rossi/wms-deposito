@@ -76,6 +76,7 @@ export const USER_ROLE_LABELS: Record<UserRole, string> = {
   admin: "Administrador",
   supervisor: "Supervisor",
   operator: "Operario",
+  client_viewer: "Cliente",
 };
 
 // --- Estrategia de picking ---

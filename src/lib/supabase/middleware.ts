@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
-import type { Database } from "@/lib/types/database";
+import type { Database, UserRole } from "@/lib/types/database";
+import { homePathForRole, isClientViewer } from "@/lib/portal/roles";
 
 /**
  * Refresca la sesión de Supabase en cada request y mantiene las cookies
@@ -38,11 +39,22 @@ export async function updateSession(request: NextRequest) {
 
   const { pathname } = request.nextUrl;
   const isAuthRoute = pathname.startsWith("/login");
+  const isClienteRoute = pathname === "/cliente" || pathname.startsWith("/cliente/");
   const isPublicAsset =
     pathname.startsWith("/_next") ||
     pathname.startsWith("/api/auth") ||
     pathname.startsWith("/api/cron/") ||
     pathname === "/favicon.ico";
+
+  let role: UserRole | null = null;
+  if (user) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .single();
+    role = profile?.role ?? null;
+  }
 
   // Sin sesión y en ruta privada -> al login
   if (!user && !isAuthRoute && !isPublicAsset && pathname !== "/") {
@@ -52,8 +64,24 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // Con sesión y entrando al login -> al dashboard
+  // Con sesión y entrando al login -> home según rol
   if (user && isAuthRoute) {
+    const url = request.nextUrl.clone();
+    url.pathname = role ? homePathForRole(role) : "/dashboard";
+    url.search = "";
+    return NextResponse.redirect(url);
+  }
+
+  // client_viewer solo en portal cliente
+  if (user && role && isClientViewer(role) && !isClienteRoute && !isPublicAsset && pathname !== "/") {
+    const url = request.nextUrl.clone();
+    url.pathname = "/cliente/stock";
+    url.search = "";
+    return NextResponse.redirect(url);
+  }
+
+  // Staff no accede al portal cliente
+  if (user && role && !isClientViewer(role) && isClienteRoute) {
     const url = request.nextUrl.clone();
     url.pathname = "/dashboard";
     url.search = "";

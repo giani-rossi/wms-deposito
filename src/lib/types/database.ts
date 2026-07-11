@@ -10,7 +10,12 @@
 // Enums (deben coincidir con los CREATE TYPE en SQL)
 // ---------------------------------------------------------------------------
 
-export type UserRole = "admin" | "supervisor" | "operator";
+export type UserRole = "admin" | "supervisor" | "operator" | "client_viewer";
+
+export type PortalAuditEventType =
+  | "login"
+  | "export_stock"
+  | "export_movements";
 
 export type PickingStrategy = "FIFO" | "LIFO" | "manual";
 
@@ -204,6 +209,7 @@ export interface ProfileRow extends Timestamps {
   full_name: string | null;
   email: string | null;
   role: UserRole;
+  client_id: string | null;
 }
 
 export interface ClientRow extends Timestamps {
@@ -485,6 +491,41 @@ export interface StockByPositionView {
   stock_status: StockStatus;
 }
 
+export interface ClientPortalStockView {
+  client_id: string;
+  cuit: string | null;
+  client_label: string;
+  product_id: string;
+  sku: string | null;
+  product_name: string;
+  logistic_unit_id: string;
+  logistic_unit_code: string;
+  logistic_unit_type: LogisticUnitType;
+  quantity: number;
+  unit_of_measure: string | null;
+  lot: string | null;
+  entry_date: string | null;
+}
+
+export interface ClientPortalMovementView {
+  id: string;
+  date_time: string;
+  client_id: string;
+  movement_type: MovementType;
+  quantity: number;
+  sku: string | null;
+  product_name: string | null;
+  logistic_unit_code: string | null;
+}
+
+export interface PortalAuditEventRow extends Timestamps {
+  id: string;
+  profile_id: string;
+  client_id: string;
+  event_type: PortalAuditEventType;
+  metadata: Record<string, unknown> | null;
+}
+
 // ---------------------------------------------------------------------------
 // Helper genérico para construir Insert/Update a partir de una Row
 // ---------------------------------------------------------------------------
@@ -755,10 +796,24 @@ export interface Database {
         Update: Partial<DailyPositionOccupancyRow>;
         Relationships: [];
       };
+      portal_audit_events: {
+        Row: Indexed<PortalAuditEventRow>;
+        Insert: InsertOf<PortalAuditEventRow, AutoCols>;
+        Update: Partial<PortalAuditEventRow>;
+        Relationships: [];
+      };
     };
     Views: {
       stock_by_position: {
         Row: Indexed<StockByPositionView>;
+        Relationships: [];
+      };
+      client_portal_stock: {
+        Row: Indexed<ClientPortalStockView>;
+        Relationships: [];
+      };
+      client_portal_movements: {
+        Row: Indexed<ClientPortalMovementView>;
         Relationships: [];
       };
     };

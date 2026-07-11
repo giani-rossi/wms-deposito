@@ -4,6 +4,9 @@ import { z } from "zod";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { homePathForRole, isClientViewer } from "@/lib/portal/roles";
+import { logPortalAuditEvent } from "@/lib/portal/audit";
+import type { UserRole } from "@/lib/types/database";
 
 export type AuthState = { error?: string } | undefined;
 
@@ -15,6 +18,40 @@ const credentialsSchema = z.object({
 const signupSchema = credentialsSchema.extend({
   full_name: z.string().min(2, "Ingresá tu nombre completo"),
 });
+
+async function resolvePostLoginPath(
+  userId: string,
+  requestedRedirect: string | null
+): Promise<string> {
+  const supabase = createClient();
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("id, role, client_id")
+    .eq("id", userId)
+    .single();
+
+  if (!profile) return "/dashboard";
+
+  if (isClientViewer(profile.role as UserRole) && profile.client_id) {
+    await logPortalAuditEvent({
+      profileId: profile.id,
+      clientId: profile.client_id,
+      eventType: "login",
+    });
+    return "/cliente/stock";
+  }
+
+  if (
+    requestedRedirect &&
+    requestedRedirect.startsWith("/") &&
+    !requestedRedirect.startsWith("/login") &&
+    !requestedRedirect.startsWith("/cliente")
+  ) {
+    return requestedRedirect;
+  }
+
+  return homePathForRole(profile.role as UserRole);
+}
 
 export async function login(
   _prev: AuthState,
@@ -30,13 +67,16 @@ export async function login(
   }
 
   const supabase = createClient();
-  const { error } = await supabase.auth.signInWithPassword(parsed.data);
+  const { data, error } = await supabase.auth.signInWithPassword(parsed.data);
 
   if (error) {
     return { error: "Email o contraseña incorrectos" };
   }
 
-  const redirectTo = (formData.get("redirect") as string) || "/dashboard";
+  const redirectTo = await resolvePostLoginPath(
+    data.user.id,
+    (formData.get("redirect") as string) || null
+  );
   revalidatePath("/", "layout");
   redirect(redirectTo);
 }

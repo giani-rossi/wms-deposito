@@ -14,7 +14,13 @@ export function LoginForm() {
   const queryError = searchParams.get("error");
 
   const queryErrorMessage =
-    queryError === "portal_disabled" ? PORTAL_DISABLED_LOGIN_MESSAGE : null;
+    queryError === "portal_disabled"
+      ? PORTAL_DISABLED_LOGIN_MESSAGE
+      : queryError === "auth_callback_error"
+        ? "No se pudo validar el acceso. Pedí un nuevo link a administración."
+        : queryError === "auth_session_required"
+          ? "Abrí el link del email de invitación o acceso para crear tu contraseña."
+          : null;
 
   const [state, formAction] = useFormState<AuthState, FormData>(
     login,

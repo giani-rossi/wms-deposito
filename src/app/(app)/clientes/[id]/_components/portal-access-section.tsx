@@ -107,6 +107,10 @@ function InviteForm({
                   placeholder="Nombre del contacto"
                 />
               </div>
+              <p className="text-sm text-muted-foreground">
+                Se enviará un email para que el usuario cree o restablezca su
+                contraseña.
+              </p>
               {state?.error && (
                 <p className="text-sm text-destructive">{state.error}</p>
               )}
@@ -156,7 +160,8 @@ function PortalUserActions({
 
   return (
     <div className="flex flex-col gap-2">
-      {user.portal_access_status === "invited" && (
+      {(user.portal_access_status === "invited" ||
+        user.portal_access_status === "active") && (
         <Button
           type="button"
           size="sm"
@@ -169,7 +174,7 @@ function PortalUserActions({
           ) : (
             <RefreshCw className="mr-2 h-4 w-4" />
           )}
-          Reenviar
+          Reenviar acceso
         </Button>
       )}
       {user.portal_access_status !== "disabled" ? (

@@ -33,13 +33,15 @@ export async function updateSession(request: NextRequest) {
     }
   );
 
-  // IMPORTANTE: no insertar lógica entre createServerClient y getUser().
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
   const { pathname } = request.nextUrl;
-  const isAuthRoute = pathname.startsWith("/login");
+  const isLoginRoute = pathname.startsWith("/login");
+  const isAuthCallbackRoute = pathname.startsWith("/auth/callback");
+  const isSetPasswordRoute = pathname.startsWith("/auth/set-password");
+  const isAuthFlowRoute = isAuthCallbackRoute || isSetPasswordRoute;
   const isClienteRoute = pathname === "/cliente" || pathname.startsWith("/cliente/");
   const isPublicAsset =
     pathname.startsWith("/_next") ||
@@ -65,16 +67,28 @@ export async function updateSession(request: NextRequest) {
     isClientViewer(role) &&
     isPortalAccessDisabled(portalAccessStatus);
 
-  // Sin sesión y en ruta privada -> al login
-  if (!user && !isAuthRoute && !isPublicAsset && pathname !== "/") {
+  if (!user && isSetPasswordRoute) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/login";
+    url.searchParams.set("error", "auth_session_required");
+    url.searchParams.delete("redirect");
+    return NextResponse.redirect(url);
+  }
+
+  if (
+    !user &&
+    !isLoginRoute &&
+    !isPublicAsset &&
+    !isAuthCallbackRoute &&
+    pathname !== "/"
+  ) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("redirect", pathname);
     return NextResponse.redirect(url);
   }
 
-  // client_viewer deshabilitado -> login con mensaje (no entra al portal)
-  if (portalDisabled && !isPublicAsset) {
+  if (portalDisabled && !isPublicAsset && !isAuthCallbackRoute) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("error", "portal_disabled");
@@ -82,23 +96,28 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // Con sesión y entrando al login -> home según rol
-  if (user && isAuthRoute) {
+  if (user && isLoginRoute && !portalDisabled) {
     const url = request.nextUrl.clone();
     url.pathname = role ? homePathForRole(role) : "/dashboard";
     url.search = "";
     return NextResponse.redirect(url);
   }
 
-  // client_viewer solo en portal cliente
-  if (user && role && isClientViewer(role) && !isClienteRoute && !isPublicAsset && pathname !== "/") {
+  if (
+    user &&
+    role &&
+    isClientViewer(role) &&
+    !isClienteRoute &&
+    !isPublicAsset &&
+    !isAuthFlowRoute &&
+    pathname !== "/"
+  ) {
     const url = request.nextUrl.clone();
     url.pathname = "/cliente/stock";
     url.search = "";
     return NextResponse.redirect(url);
   }
 
-  // Staff no accede al portal cliente
   if (user && role && !isClientViewer(role) && isClienteRoute) {
     const url = request.nextUrl.clone();
     url.pathname = "/dashboard";

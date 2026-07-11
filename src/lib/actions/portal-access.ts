@@ -2,15 +2,21 @@
 
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 import { requireProfile } from "@/lib/auth";
+import {
+  canSendPortalAccessLink,
+  isAuthUserAlreadyRegisteredError,
+  resolvePortalAccessDelivery,
+} from "@/lib/portal/access-auth";
 import {
   canManagePortalAccess,
   clientHasInvitableCuit,
   normalizePortalEmail,
   validatePortalInviteEmail,
 } from "@/lib/portal/access";
+import { getAuthCallbackUrl } from "@/lib/portal/site-url";
 import { portalInviteSchema } from "@/lib/validation/portal-access";
-import { getPortalInviteRedirectUrl } from "@/lib/portal/site-url";
 import type { ProfileRow, UserRole } from "@/lib/types/database";
 
 export type PortalAccessActionState = { error?: string; success?: string } | undefined;
@@ -57,18 +63,6 @@ async function findProfileByEmail(
   admin: ReturnType<typeof createAdminClient>,
   email: string
 ): Promise<Pick<ProfileRow, "id" | "email" | "role" | "client_id" | "portal_access_status"> | null> {
-  const { data } = await admin
-    .from("profiles")
-    .select("id, email, role, client_id, portal_access_status")
-    .ilike("email", email)
-    .maybeSingle();
-
-  if (!data?.email) return data;
-
-  if (normalizePortalEmail(data.email) === email) {
-    return data;
-  }
-
   const { data: rows } = await admin
     .from("profiles")
     .select("id, email, role, client_id, portal_access_status")
@@ -78,6 +72,14 @@ async function findProfileByEmail(
     rows?.find((row) => row.email && normalizePortalEmail(row.email) === email) ??
     null
   );
+}
+
+async function authUserExists(
+  admin: ReturnType<typeof createAdminClient>,
+  userId: string
+): Promise<boolean> {
+  const { data, error } = await admin.auth.admin.getUserById(userId);
+  return !error && !!data.user;
 }
 
 function mapEmailConflict(reason: "staff_user" | "other_client"): string {
@@ -126,7 +128,7 @@ async function sendAuthInvite(
   fullName?: string
 ) {
   const { data, error } = await admin.auth.admin.inviteUserByEmail(email, {
-    redirectTo: getPortalInviteRedirectUrl(),
+    redirectTo: getAuthCallbackUrl("/auth/set-password"),
     data: fullName ? { full_name: fullName } : undefined,
   });
 
@@ -139,6 +141,62 @@ async function sendAuthInvite(
   }
 
   return data.user.id;
+}
+
+async function sendRecoveryAccessEmail(email: string) {
+  const supabase = createClient();
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: getAuthCallbackUrl("/auth/set-password"),
+  });
+
+  if (error) {
+    throw error;
+  }
+}
+
+async function deliverPortalAccessEmail(params: {
+  admin: ReturnType<typeof createAdminClient>;
+  email: string;
+  fullName?: string;
+  existingProfile: Pick<
+    ProfileRow,
+    "id" | "email" | "role" | "client_id" | "portal_access_status"
+  > | null;
+}): Promise<string> {
+  const delivery = resolvePortalAccessDelivery({
+    hasExistingPortalProfile:
+      params.existingProfile?.role === "client_viewer" &&
+      !!params.existingProfile.id,
+    hasKnownAuthUserId: params.existingProfile?.id
+      ? await authUserExists(params.admin, params.existingProfile.id)
+      : false,
+  });
+
+  if (delivery === "recovery") {
+    if (!params.existingProfile?.id) {
+      throw new Error("No se encontró el usuario para reenviar acceso.");
+    }
+    await sendRecoveryAccessEmail(params.email);
+    return params.existingProfile.id;
+  }
+
+  try {
+    return await sendAuthInvite(params.admin, params.email, params.fullName);
+  } catch (err) {
+    if (isAuthUserAlreadyRegisteredError(err)) {
+      await sendRecoveryAccessEmail(params.email);
+      const profileAfter =
+        params.existingProfile ??
+        (await findProfileByEmail(params.admin, params.email));
+      if (profileAfter?.id) {
+        return profileAfter.id;
+      }
+      throw new Error(
+        "El email ya está registrado en Auth pero no hay perfil portal asociado. Contactá soporte."
+      );
+    }
+    throw err;
+  }
 }
 
 export async function invitePortalUserAction(
@@ -181,35 +239,42 @@ export async function invitePortalUserAction(
     return { error: mapEmailConflict(conflict.reason) };
   }
 
-  try {
-    if (existing?.client_id === clientId && existing.role === "client_viewer") {
-      await sendAuthInvite(admin, email, parsed.data.full_name);
-      await upsertPortalProfile(admin, {
-        userId: existing.id,
-        email,
-        fullName: parsed.data.full_name ?? existing.email ?? email,
-        clientId,
-        invitedBy: actor.id,
-        portalAccessStatus: "invited",
-      });
-      revalidatePath(`/clientes/${clientId}`);
-      return { success: "Invitación reenviada al usuario existente." };
-    }
+  if (!canSendPortalAccessLink(existing?.portal_access_status)) {
+    return {
+      error:
+        "El usuario está deshabilitado. Habilitá el acceso antes de enviar un link.",
+    };
+  }
 
-    const userId = await sendAuthInvite(admin, email, parsed.data.full_name);
+  try {
+    const userId = await deliverPortalAccessEmail({
+      admin,
+      email,
+      fullName: parsed.data.full_name,
+      existingProfile: existing,
+    });
+
     await upsertPortalProfile(admin, {
       userId,
       email,
-      fullName: parsed.data.full_name,
+      fullName: parsed.data.full_name ?? existing?.email ?? email,
       clientId,
       invitedBy: actor.id,
       portalAccessStatus: "invited",
     });
 
     revalidatePath(`/clientes/${clientId}`);
-    return { success: "Invitación enviada. El usuario recibirá un email para definir su contraseña." };
+
+    const isResend =
+      existing?.client_id === clientId && existing.role === "client_viewer";
+    return {
+      success: isResend
+        ? "Se envió un email para que el usuario cree o restablezca su contraseña."
+        : "Invitación enviada. El usuario recibirá un email para crear su contraseña.",
+    };
   } catch (err) {
-    const message = err instanceof Error ? err.message : "No se pudo enviar la invitación.";
+    const message =
+      err instanceof Error ? err.message : "No se pudo enviar el acceso al portal.";
     return { error: message };
   }
 }
@@ -238,20 +303,32 @@ export async function resendPortalInviteAction(
     return { error: "Usuario del portal no encontrado." };
   }
 
+  if (!canSendPortalAccessLink(portalUser.portal_access_status)) {
+    return {
+      error:
+        "El usuario está deshabilitado. Habilitá el acceso antes de reenviar.",
+    };
+  }
+
   try {
-    await sendAuthInvite(admin, normalizePortalEmail(portalUser.email), portalUser.full_name ?? undefined);
+    const email = normalizePortalEmail(portalUser.email);
+    await sendRecoveryAccessEmail(email);
     await upsertPortalProfile(admin, {
       userId: portalUser.id,
-      email: normalizePortalEmail(portalUser.email),
+      email,
       fullName: portalUser.full_name ?? undefined,
       clientId,
       invitedBy: actor.id,
       portalAccessStatus: "invited",
     });
     revalidatePath(`/clientes/${clientId}`);
-    return { success: "Invitación reenviada." };
+    return {
+      success:
+        "Se envió un email para que el usuario cree o restablezca su contraseña.",
+    };
   } catch (err) {
-    const message = err instanceof Error ? err.message : "No se pudo reenviar la invitación.";
+    const message =
+      err instanceof Error ? err.message : "No se pudo reenviar el acceso.";
     return { error: message };
   }
 }
@@ -285,8 +362,6 @@ export async function disablePortalAccessAction(
   if (error || !data) {
     return { error: "No se pudo deshabilitar el acceso." };
   }
-
-  // TODO: opcional ban en Supabase Auth (auth.admin.updateUserById ban_duration)
 
   revalidatePath(`/clientes/${clientId}`);
   return { success: "Acceso al portal deshabilitado." };
@@ -334,7 +409,6 @@ export async function enablePortalAccessAction(
   return { success: "Acceso al portal habilitado." };
 }
 
-/** Lista accesos portal de un cliente (server component). */
 export async function listPortalAccessUsers(clientId: string) {
   const profile = await requireProfile();
   if (!canManagePortalAccess(profile.role)) {

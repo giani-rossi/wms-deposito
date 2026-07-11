@@ -1,8 +1,11 @@
 -- =====================================================================
 -- WMS Depósito — Migración 0017: gestión de accesos portal cliente
 -- =====================================================================
--- Requiere 0016a + 0016b aplicadas.
--- Idempotente: ADD IF NOT EXISTS, DROP IF EXISTS, DO blocks con pg_constraint.
+-- Requiere rol client_viewer en enum (0016a) y columnas base de profiles.
+-- Idempotente: ADD IF NOT EXISTS, CREATE OR REPLACE, DO blocks.
+--
+-- NOTA: define is_client_viewer() / auth_client_id() aquí para no depender
+-- de que 0016b se haya aplicado completa en el entorno productivo.
 -- =====================================================================
 
 -- ---------------------------------------------------------------------
@@ -103,8 +106,36 @@ END;
 $$;
 
 -- ---------------------------------------------------------------------
--- 3) Helpers SQL
+-- 3) Helpers SQL (autocontenidos; CREATE OR REPLACE idempotente)
 -- ---------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION public.is_client_viewer()
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.profiles p
+    WHERE p.id = auth.uid()
+      AND p.role = 'client_viewer'
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION public.auth_client_id()
+RETURNS uuid
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT client_id
+  FROM public.profiles
+  WHERE id = auth.uid();
+$$;
+
 CREATE OR REPLACE FUNCTION portal_access_status_for_user(p_user_id uuid)
 RETURNS text
 LANGUAGE sql

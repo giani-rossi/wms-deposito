@@ -59,11 +59,20 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_clients_tax_id
 -- ---------------------------------------------------------------------
 -- 3) Helpers RLS (security definer para evitar recursión en profiles)
 -- ---------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION is_client_viewer()
+CREATE OR REPLACE FUNCTION public.is_client_viewer()
 RETURNS boolean
 LANGUAGE sql
 STABLE
-AS $$ SELECT auth_role() = 'client_viewer'; $$;
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.profiles p
+    WHERE p.id = auth.uid()
+      AND p.role = 'client_viewer'
+  );
+$$;
 
 CREATE OR REPLACE FUNCTION auth_client_id()
 RETURNS uuid

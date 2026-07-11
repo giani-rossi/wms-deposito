@@ -1,7 +1,8 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
-import type { Database, UserRole } from "@/lib/types/database";
+import type { Database, PortalAccessStatus, UserRole } from "@/lib/types/database";
 import { homePathForRole, isClientViewer } from "@/lib/portal/roles";
+import { isPortalAccessDisabled } from "@/lib/portal/access";
 
 /**
  * Refresca la sesión de Supabase en cada request y mantiene las cookies
@@ -47,20 +48,37 @@ export async function updateSession(request: NextRequest) {
     pathname === "/favicon.ico";
 
   let role: UserRole | null = null;
+  let portalAccessStatus: PortalAccessStatus | null = null;
   if (user) {
     const { data: profile } = await supabase
       .from("profiles")
-      .select("role")
+      .select("role, portal_access_status")
       .eq("id", user.id)
       .single();
     role = profile?.role ?? null;
+    portalAccessStatus = profile?.portal_access_status ?? null;
   }
+
+  const portalDisabled =
+    !!user &&
+    !!role &&
+    isClientViewer(role) &&
+    isPortalAccessDisabled(portalAccessStatus);
 
   // Sin sesión y en ruta privada -> al login
   if (!user && !isAuthRoute && !isPublicAsset && pathname !== "/") {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("redirect", pathname);
+    return NextResponse.redirect(url);
+  }
+
+  // client_viewer deshabilitado -> login con mensaje (no entra al portal)
+  if (portalDisabled && !isPublicAsset) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/login";
+    url.searchParams.set("error", "portal_disabled");
+    url.searchParams.delete("redirect");
     return NextResponse.redirect(url);
   }
 

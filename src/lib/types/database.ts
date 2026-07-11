@@ -21,6 +21,8 @@ export type PortalAuditResource =
   | "client_portal_stock"
   | "client_portal_movements";
 
+export type PortalAccessStatus = "invited" | "active" | "disabled";
+
 export type PickingStrategy = "FIFO" | "LIFO" | "manual";
 
 export type PositionType =
@@ -214,6 +216,12 @@ export interface ProfileRow extends Timestamps {
   email: string | null;
   role: UserRole;
   client_id: string | null;
+  portal_access_status: PortalAccessStatus | null;
+  portal_invited_at: string | null;
+  portal_invited_by: string | null;
+  portal_disabled_at: string | null;
+  portal_disabled_by: string | null;
+  portal_last_login_at: string | null;
 }
 
 export interface ClientRow extends Timestamps {
@@ -531,6 +539,25 @@ export interface PortalAuditEventRow {
   created_at: string;
 }
 
+export interface ClientPortalAccessUserView {
+  profile_id: string;
+  client_id: string;
+  client_name: string;
+  client_legal_name: string | null;
+  client_tax_id: string | null;
+  email: string | null;
+  full_name: string | null;
+  portal_access_status: PortalAccessStatus;
+  portal_invited_at: string | null;
+  portal_invited_by: string | null;
+  portal_invited_by_name: string | null;
+  portal_disabled_at: string | null;
+  portal_disabled_by: string | null;
+  portal_last_login_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 // ---------------------------------------------------------------------------
 // Helper genérico para construir Insert/Update a partir de una Row
 // ---------------------------------------------------------------------------
@@ -557,7 +584,19 @@ export interface Database {
     Tables: {
       profiles: {
         Row: Indexed<ProfileRow>;
-        Insert: InsertOf<ProfileRow, "created_at" | "updated_at" | "role">;
+        Insert: InsertOf<
+          ProfileRow,
+          | "created_at"
+          | "updated_at"
+          | "role"
+          | "client_id"
+          | "portal_access_status"
+          | "portal_invited_at"
+          | "portal_invited_by"
+          | "portal_disabled_at"
+          | "portal_disabled_by"
+          | "portal_last_login_at"
+        >;
         Update: Partial<ProfileRow>;
         Relationships: [];
       };
@@ -819,6 +858,10 @@ export interface Database {
       };
       client_portal_movements: {
         Row: Indexed<ClientPortalMovementView>;
+        Relationships: [];
+      };
+      client_portal_access_users: {
+        Row: Indexed<ClientPortalAccessUserView>;
         Relationships: [];
       };
     };

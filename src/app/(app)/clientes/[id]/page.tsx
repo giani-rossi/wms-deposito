@@ -15,6 +15,8 @@ import {
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentProfile, isStaff } from "@/lib/auth";
+import { canManagePortalAccess, clientHasInvitableCuit } from "@/lib/portal/access";
+import { listPortalAccessUsers } from "@/lib/actions/portal-access";
 import {
   PICKING_STRATEGY_LABELS,
   POSITION_TYPE_LABELS,
@@ -48,6 +50,7 @@ import {
 } from "@/components/status-badges";
 import { DeleteClientButton } from "../_components/delete-client-button";
 import { ToggleActiveButton } from "../_components/toggle-active-button";
+import { PortalAccessSection } from "./_components/portal-access-section";
 
 export const dynamic = "force-dynamic";
 
@@ -59,6 +62,7 @@ export default async function ClienteFichaPage({
   const id = params.id;
   const profile = await getCurrentProfile();
   const staff = profile ? isStaff(profile.role) : false;
+  const canManagePortal = profile ? canManagePortalAccess(profile.role) : false;
 
   const supabase = createClient();
   const { data: client } = await supabase
@@ -68,6 +72,8 @@ export default async function ClienteFichaPage({
     .single();
 
   if (!client) notFound();
+
+  const portalUsers = canManagePortal ? await listPortalAccessUsers(id) : [];
 
   const [
     { data: positions },
@@ -506,6 +512,17 @@ export default async function ClienteFichaPage({
       />
     );
 
+  const portalAccessTab = canManagePortal ? (
+    <PortalAccessSection
+      clientId={id}
+      clientName={client.nombre}
+      clientLegalName={client.razon_social}
+      clientTaxId={client.tax_id}
+      users={portalUsers}
+      canInvite={clientHasInvitableCuit(client.tax_id)}
+    />
+  ) : null;
+
   const tabs = [
     { id: "resumen", label: "Resumen", content: resumen },
     {
@@ -545,6 +562,16 @@ export default async function ClienteFichaPage({
       badge: incidentsTotal,
       content: incidenciasTab,
     },
+    ...(canManagePortal
+      ? [
+          {
+            id: "portal",
+            label: "Accesos portal",
+            badge: portalUsers.length,
+            content: portalAccessTab,
+          },
+        ]
+      : []),
   ];
 
   return (

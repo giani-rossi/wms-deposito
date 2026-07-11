@@ -142,28 +142,29 @@ WHERE m.client_id IS NOT NULL;
 
 -- ---------------------------------------------------------------------
 -- 6) Auditoría del portal
+-- Columnas alineadas con Supabase productivo:
+--   user_id, client_id, event_type, resource, metadata, created_at
 -- ---------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS portal_audit_events (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  profile_id uuid NOT NULL REFERENCES profiles (id) ON DELETE CASCADE,
+  user_id uuid NOT NULL REFERENCES profiles (id) ON DELETE CASCADE,
   client_id uuid NOT NULL REFERENCES clients (id) ON DELETE CASCADE,
   event_type text NOT NULL
-    CHECK (event_type IN ('login', 'export_stock', 'export_movements')),
+    CHECK (event_type IN ('login', 'stock_export', 'movements_export')),
+  resource text
+    CHECK (
+      resource IS NULL
+      OR resource IN ('client_portal_stock', 'client_portal_movements')
+    ),
   metadata jsonb,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
+  created_at timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_portal_audit_client
   ON portal_audit_events (client_id, created_at DESC);
 
-CREATE INDEX IF NOT EXISTS idx_portal_audit_profile
-  ON portal_audit_events (profile_id, created_at DESC);
-
-DROP TRIGGER IF EXISTS trg_portal_audit_updated_at ON portal_audit_events;
-CREATE TRIGGER trg_portal_audit_updated_at
-  BEFORE UPDATE ON portal_audit_events
-  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+CREATE INDEX IF NOT EXISTS idx_portal_audit_user
+  ON portal_audit_events (user_id, created_at DESC);
 
 ALTER TABLE portal_audit_events ENABLE ROW LEVEL SECURITY;
 
@@ -399,7 +400,7 @@ CREATE POLICY portal_audit_insert ON portal_audit_events
   FOR INSERT TO authenticated
   WITH CHECK (
     is_client_viewer()
-    AND profile_id = auth.uid()
+    AND user_id = auth.uid()
     AND client_id = auth_client_id()
   );
 

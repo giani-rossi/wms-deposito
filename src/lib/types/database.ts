@@ -14,8 +14,12 @@ export type UserRole = "admin" | "supervisor" | "operator" | "client_viewer";
 
 export type PortalAuditEventType =
   | "login"
-  | "export_stock"
-  | "export_movements";
+  | "stock_export"
+  | "movements_export";
+
+export type PortalAuditResource =
+  | "client_portal_stock"
+  | "client_portal_movements";
 
 export type PickingStrategy = "FIFO" | "LIFO" | "manual";
 
@@ -517,12 +521,14 @@ export interface ClientPortalMovementView {
   logistic_unit_code: string | null;
 }
 
-export interface PortalAuditEventRow extends Timestamps {
+export interface PortalAuditEventRow {
   id: string;
-  profile_id: string;
+  user_id: string;
   client_id: string;
   event_type: PortalAuditEventType;
+  resource: PortalAuditResource | null;
   metadata: Record<string, unknown> | null;
+  created_at: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -797,7 +803,7 @@ export interface Database {
       };
       portal_audit_events: {
         Row: Indexed<PortalAuditEventRow>;
-        Insert: InsertOf<PortalAuditEventRow, AutoCols>;
+        Insert: InsertOf<PortalAuditEventRow, "id" | "created_at">;
         Update: Partial<PortalAuditEventRow>;
         Relationships: [];
       };

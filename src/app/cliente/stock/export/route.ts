@@ -56,10 +56,11 @@ export async function GET(request: Request) {
   ]);
 
   await logPortalAuditEvent({
-    profileId: profile.id,
+    userId: profile.id,
     clientId: client.id,
-    eventType: "export_stock",
-    metadata: { row_count: csvRows.length, filter: q || null },
+    eventType: "stock_export",
+    resource: "client_portal_stock",
+    metadata: { format: "csv", row_count: csvRows.length },
   });
 
   const stamp = new Date().toISOString().slice(0, 10);

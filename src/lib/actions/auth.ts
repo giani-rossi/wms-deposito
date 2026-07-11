@@ -30,7 +30,7 @@ async function resolvePostLoginPath(
 
   if (isClientViewer(profile.role as UserRole) && profile.client_id) {
     await logPortalAuditEvent({
-      profileId: profile.id,
+      userId: profile.id,
       clientId: profile.client_id,
       eventType: "login",
     });

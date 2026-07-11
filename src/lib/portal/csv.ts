@@ -5,6 +5,8 @@ export const PORTAL_CSV_FORBIDDEN_COLUMNS = [
   "current_position_id",
   "from_position_id",
   "to_position_id",
+  "ubicacion",
+  "rack",
   "notes",
 ] as const;
 

@@ -23,7 +23,7 @@ export default function LoginPage() {
           </div>
           <CardTitle className="text-2xl">WMS Depósito</CardTitle>
           <CardDescription>
-            Ingresá para gestionar la operación del depósito
+            Ingresá con tu cuenta asignada por administración
           </CardDescription>
         </CardHeader>
         <CardContent>

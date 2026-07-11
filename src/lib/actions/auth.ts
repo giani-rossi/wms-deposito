@@ -15,10 +15,6 @@ const credentialsSchema = z.object({
   password: z.string().min(6, "La contraseña debe tener al menos 6 caracteres"),
 });
 
-const signupSchema = credentialsSchema.extend({
-  full_name: z.string().min(2, "Ingresá tu nombre completo"),
-});
-
 async function resolvePostLoginPath(
   userId: string,
   requestedRedirect: string | null
@@ -79,37 +75,6 @@ export async function login(
   );
   revalidatePath("/", "layout");
   redirect(redirectTo);
-}
-
-export async function signup(
-  _prev: AuthState,
-  formData: FormData
-): Promise<AuthState> {
-  const parsed = signupSchema.safeParse({
-    email: formData.get("email"),
-    password: formData.get("password"),
-    full_name: formData.get("full_name"),
-  });
-
-  if (!parsed.success) {
-    return { error: parsed.error.errors[0]?.message ?? "Datos inválidos" };
-  }
-
-  const supabase = createClient();
-  const { error } = await supabase.auth.signUp({
-    email: parsed.data.email,
-    password: parsed.data.password,
-    options: {
-      data: { full_name: parsed.data.full_name },
-    },
-  });
-
-  if (error) {
-    return { error: error.message };
-  }
-
-  revalidatePath("/", "layout");
-  redirect("/dashboard");
 }
 
 export async function signOut() {

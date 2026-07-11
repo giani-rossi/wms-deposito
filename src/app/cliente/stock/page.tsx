@@ -3,7 +3,6 @@ import { Download } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { requireClientViewer } from "@/lib/portal/auth";
 import { formatDate, orDash } from "@/lib/format";
-import { LOGISTIC_UNIT_TYPE_LABELS } from "@/lib/constants";
 import { EmptyState } from "@/components/layout/empty-state";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -37,13 +36,20 @@ export default async function ClienteStockPage({
   const supabase = createClient();
   const { data: rows } = await supabase
     .from("client_portal_stock")
-    .select("*")
+    .select(
+      "client_id, client_name, client_tax_id, logistic_unit_id, logistic_unit_code, entry_date, product_id, product_name, sku, quantity, unit_of_measure, status_label"
+    )
     .order("product_name")
     .order("logistic_unit_code");
 
   const filtered = (rows ?? []).filter((row) => {
     if (!q) return true;
-    const haystack = [row.product_name, row.sku, row.logistic_unit_code]
+    const haystack = [
+      row.product_name,
+      row.sku,
+      row.logistic_unit_code,
+      row.status_label,
+    ]
       .filter(Boolean)
       .join(" ")
       .toLowerCase();
@@ -99,9 +105,8 @@ export default async function ClienteStockPage({
                     <TableHead>Producto</TableHead>
                     <TableHead>SKU</TableHead>
                     <TableHead>Unidad logística</TableHead>
-                    <TableHead>Tipo</TableHead>
+                    <TableHead>Estado</TableHead>
                     <TableHead className="text-right">Cantidad</TableHead>
-                    <TableHead>Lote</TableHead>
                     <TableHead>Ingreso</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -113,14 +118,11 @@ export default async function ClienteStockPage({
                       </TableCell>
                       <TableCell>{orDash(row.sku)}</TableCell>
                       <TableCell>{row.logistic_unit_code}</TableCell>
-                      <TableCell>
-                        {LOGISTIC_UNIT_TYPE_LABELS[row.logistic_unit_type]}
-                      </TableCell>
+                      <TableCell>{row.status_label}</TableCell>
                       <TableCell className="text-right">
                         {row.quantity}
                         {row.unit_of_measure ? ` ${row.unit_of_measure}` : ""}
                       </TableCell>
-                      <TableCell>{orDash(row.lot)}</TableCell>
                       <TableCell>{formatDate(row.entry_date)}</TableCell>
                     </TableRow>
                   ))}

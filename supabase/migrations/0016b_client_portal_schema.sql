@@ -84,24 +84,33 @@ AS $$
 $$;
 
 -- ---------------------------------------------------------------------
--- 4) Vista portal stock (sin posición; solo stock disponible en rack)
+-- 4) Vista portal stock (sin posición; columnas consumidas por /cliente/stock)
 -- ---------------------------------------------------------------------
-CREATE OR REPLACE VIEW client_portal_stock
+CREATE OR REPLACE VIEW public.client_portal_stock
 WITH (security_invoker = true) AS
 SELECT
   lu.client_id,
-  c.tax_id AS cuit,
-  c.nombre AS client_label,
-  p.id AS product_id,
-  p.sku,
-  p.name AS product_name,
+  c.nombre AS client_name,
+  c.tax_id AS client_tax_id,
   lu.id AS logistic_unit_id,
   lu.code AS logistic_unit_code,
-  lu.type AS logistic_unit_type,
+  coalesce(luc.entry_date, lu.entry_date) AS entry_date,
+  p.id AS product_id,
+  p.name AS product_name,
+  p.sku,
   luc.quantity,
   luc.unit_of_measure,
-  luc.lot,
-  coalesce(luc.entry_date, lu.entry_date) AS entry_date
+  CASE luc.status
+    WHEN 'available' THEN 'Disponible'
+    WHEN 'reserved' THEN 'Reservado'
+    WHEN 'floor_inbound' THEN 'Piso ingreso'
+    WHEN 'floor_outbound' THEN 'Piso retiro'
+    WHEN 'in_classification' THEN 'En clasificación'
+    WHEN 'incident' THEN 'Revisión'
+    WHEN 'exited' THEN 'Egresado'
+    WHEN 'blocked' THEN 'Bloqueado'
+    ELSE luc.status::text
+  END AS status_label
 FROM logistic_unit_contents luc
 JOIN logistic_units lu ON lu.id = luc.logistic_unit_id
 JOIN products p ON p.id = luc.product_id
@@ -115,7 +124,7 @@ WHERE lu.status = 'located'
 -- ---------------------------------------------------------------------
 -- 5) Vista portal movimientos (sin posición ni notas internas)
 -- ---------------------------------------------------------------------
-CREATE OR REPLACE VIEW client_portal_movements
+CREATE OR REPLACE VIEW public.client_portal_movements
 WITH (security_invoker = true) AS
 SELECT
   m.id,

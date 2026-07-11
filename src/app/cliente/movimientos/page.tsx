@@ -37,7 +37,9 @@ export default async function ClienteMovimientosPage({
   const supabase = createClient();
   const { data: rows } = await supabase
     .from("client_portal_movements")
-    .select("*")
+    .select(
+      "id, date_time, client_id, movement_type, quantity, sku, product_name, logistic_unit_code"
+    )
     .order("date_time", { ascending: false })
     .limit(500);
 

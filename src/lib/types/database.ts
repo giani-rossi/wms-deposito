@@ -493,18 +493,17 @@ export interface StockByPositionView {
 
 export interface ClientPortalStockView {
   client_id: string;
-  cuit: string | null;
-  client_label: string;
-  product_id: string;
-  sku: string | null;
-  product_name: string;
+  client_name: string;
+  client_tax_id: string | null;
   logistic_unit_id: string;
   logistic_unit_code: string;
-  logistic_unit_type: LogisticUnitType;
+  entry_date: string | null;
+  product_id: string;
+  product_name: string;
+  sku: string | null;
   quantity: number;
   unit_of_measure: string | null;
-  lot: string | null;
-  entry_date: string | null;
+  status_label: string;
 }
 
 export interface ClientPortalMovementView {

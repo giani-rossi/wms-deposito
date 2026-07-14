@@ -10,7 +10,10 @@ export function getSiteUrl(): string {
   return base.replace(/\/$/, "");
 }
 
-/** Redirect de Supabase Auth → callback → next (ej. /auth/set-password). */
+/** Redirect de Supabase Auth → callback → next (ej. /auth/set-password).
+ *  En plantillas de email (Invite / Recovery) conviene usar token_hash en query:
+ *  {{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=invite&next=%2Fauth%2Fset-password
+ */
 export function getAuthCallbackUrl(next: string): string {
   return buildAuthCallbackUrl(getSiteUrl(), next);
 }

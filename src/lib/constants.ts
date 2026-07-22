@@ -514,6 +514,24 @@ export function isMapFloorZonePosition(position: {
   return code.startsWith(`${prefix}-`);
 }
 
+/** Piso guardado en mapa: floor_temporary o código FLOOR-STORAGE-XX. */
+export function isMapFloorStoragePosition(position: {
+  type: PositionType;
+  code: string | null;
+}): boolean {
+  if (isFloorStorageCode(position.code)) return true;
+  return position.type === "floor_temporary" && isMapFloorZonePosition(position);
+}
+
+/** Zonas operativas de tránsito en mapa (ingreso/retiro/revisión), sin piso guardado. */
+export function isMapOperationalTransitFloorPosition(position: {
+  type: PositionType;
+  code: string | null;
+}): boolean {
+  if (isMapFloorStoragePosition(position)) return false;
+  return isMapFloorZonePosition(position);
+}
+
 /** Texto para celdas del mapa de zonas operativas. */
 export function mapFloorZoneDisplay(
   type: PositionType,

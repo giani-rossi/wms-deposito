@@ -4,7 +4,8 @@ import {
   floorZonePrimaryLabel,
   isFinalStoragePosition,
   isFloorStorageCode,
-  isMapFloorZonePosition,
+  isMapFloorStoragePosition,
+  isMapOperationalTransitFloorPosition,
   mapFloorZoneDisplay,
   positionPrimaryLabel,
   positionSelectLabel,
@@ -45,17 +46,29 @@ describe("floor storage positions", () => {
 
   it("incluye piso guardado en zonas del mapa de forma dinámica", () => {
     expect(
-      isMapFloorZonePosition({
+      isMapFloorStoragePosition({
         type: "floor_temporary",
         code: "FLOOR-STORAGE-07",
       })
     ).toBe(true);
     expect(
-      isMapFloorZonePosition({
+      isMapOperationalTransitFloorPosition({
         type: "floor_inbound",
+        code: "FLOOR-INBOUND-02",
+      })
+    ).toBe(true);
+    expect(
+      isMapOperationalTransitFloorPosition({
+        type: "floor_temporary",
         code: "FLOOR-STORAGE-01",
       })
     ).toBe(false);
+    expect(
+      isMapFloorStoragePosition({
+        type: "floor_inbound",
+        code: "FLOOR-STORAGE-01",
+      })
+    ).toBe(true);
     expect(mapFloorZoneDisplay("floor_temporary", "FLOOR-STORAGE-04")).toEqual({
       primary: "Piso guardado",
       secondary: "04",

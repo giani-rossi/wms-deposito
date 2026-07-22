@@ -14,7 +14,8 @@ import {
   POSITION_SIDES,
   POSITION_LEVELS,
   POSITION_LEVELS_TOP_DOWN,
-  isMapFloorZonePosition,
+  isMapFloorStoragePosition,
+  isMapOperationalTransitFloorPosition,
   mapFloorZoneDisplay,
   SIDE_LABELS,
   LEVEL_LABELS,
@@ -57,7 +58,10 @@ export function WarehouseMap({
     return m;
   }, [positions]);
 
-  const floorPositions = positions.filter(isMapFloorZonePosition);
+  const storageFloorPositions = positions.filter(isMapFloorStoragePosition);
+  const operationalFloorPositions = positions.filter(
+    isMapOperationalTransitFloorPosition
+  );
 
   const [colFilter, setColFilter] = useState("");
   const [sideFilter, setSideFilter] = useState("");
@@ -233,36 +237,24 @@ export function WarehouseMap({
         </CardContent>
       </Card>
 
-      {/* Zonas operativas de piso */}
-      {floorPositions.length > 0 && (
-        <Card className="mt-6">
-          <CardContent className="space-y-3 pt-6">
-            <h3 className="text-sm font-semibold">Zonas operativas de piso</h3>
-            <div className="flex flex-wrap gap-2">
-              {floorPositions.map((p) => {
-                const display = mapFloorZoneDisplay(p.type, p.code);
-                return (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => setSelected(p)}
-                  title={`${display.primary} · ${display.secondary}`}
-                  className={cn(
-                    "flex h-14 min-w-[9rem] flex-col items-center justify-center rounded-md px-3 text-xs font-semibold shadow-sm transition-all hover:ring-2 hover:ring-ring",
-                    POSITION_STATUS_BG[p.status as PositionStatus],
-                    !matchesExisting(p) && "opacity-25"
-                  )}
-                >
-                  <span>{display.primary}</span>
-                  <span className="text-[10px] font-normal opacity-80">
-                    {display.secondary}
-                  </span>
-                </button>
-              );
-              })}
-            </div>
-          </CardContent>
-        </Card>
+      {/* Piso guardado (almacenamiento final en piso) */}
+      {storageFloorPositions.length > 0 && (
+        <FloorZoneSection
+          title="Piso guardado"
+          positions={storageFloorPositions}
+          matchesExisting={matchesExisting}
+          onSelect={setSelected}
+        />
+      )}
+
+      {/* Zonas operativas de tránsito */}
+      {operationalFloorPositions.length > 0 && (
+        <FloorZoneSection
+          title="Zonas operativas de piso"
+          positions={operationalFloorPositions}
+          matchesExisting={matchesExisting}
+          onSelect={setSelected}
+        />
       )}
 
       {/* Drawer/Modal de detalle (posición existente) */}
@@ -420,6 +412,49 @@ function CreateModal({
         </div>
       )}
     </Modal>
+  );
+}
+
+function FloorZoneSection({
+  title,
+  positions,
+  matchesExisting,
+  onSelect,
+}: {
+  title: string;
+  positions: PositionRow[];
+  matchesExisting: (p: PositionRow) => boolean;
+  onSelect: (p: PositionRow) => void;
+}) {
+  return (
+    <Card className="mt-6">
+      <CardContent className="space-y-3 pt-6">
+        <h3 className="text-sm font-semibold">{title}</h3>
+        <div className="flex flex-wrap gap-2">
+          {positions.map((p) => {
+            const display = mapFloorZoneDisplay(p.type, p.code);
+            return (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => onSelect(p)}
+                title={`${display.primary} · ${display.secondary}`}
+                className={cn(
+                  "flex h-14 min-w-[9rem] flex-col items-center justify-center rounded-md px-3 text-xs font-semibold shadow-sm transition-all hover:ring-2 hover:ring-ring",
+                  POSITION_STATUS_BG[p.status as PositionStatus],
+                  !matchesExisting(p) && "opacity-25"
+                )}
+              >
+                <span>{display.primary}</span>
+                <span className="text-[10px] font-normal opacity-80">
+                  {display.secondary}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

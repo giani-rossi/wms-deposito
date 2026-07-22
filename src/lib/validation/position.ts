@@ -26,6 +26,7 @@ const optionalText = z
 // en la base pero no se ofrece para crear/filtrar.
 export const VISIBLE_POSITION_TYPE_VALUES: [PositionType, ...PositionType[]] = [
   "rack",
+  "floor_temporary",
   "floor_inbound",
   "floor_outbound",
   "floor_incident",

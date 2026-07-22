@@ -434,6 +434,7 @@ export const VISIBLE_POSITION_TYPES: {
   label: string;
 }[] = [
   { value: "rack", label: "Rack" },
+  { value: "floor_temporary", label: "Piso guardado" },
   { value: "floor_inbound", label: "Piso ingreso" },
   { value: "floor_outbound", label: "Piso retiro" },
   { value: "floor_incident", label: "Revisión" },
@@ -451,7 +452,7 @@ export function isFinalStoragePosition(
   return type === "rack" || type === "floor_temporary";
 }
 
-/** Zonas operativas de piso visibles en mapa y listado (dinámico desde positions). */
+/** Zonas de piso en mapa/listado (incluye piso guardado y tránsito). */
 export const OPERATIONAL_FLOOR_TYPES: PositionType[] = [
   "floor_inbound",
   "floor_outbound",

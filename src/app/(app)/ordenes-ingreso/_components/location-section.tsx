@@ -202,7 +202,12 @@ export function LocationSection({
       {/* B. Listas para ubicar */}
       <Card>
         <CardContent className="pt-6">
-          <h3 className="mb-4 text-sm font-semibold">Listas para ubicar</h3>
+          <h3 className="mb-2 text-sm font-semibold">Listas para ubicar</h3>
+          <p className="mb-4 text-sm text-muted-foreground">
+            Las unidades en Piso ingreso están pendientes de ubicación final.
+            Para que cuenten como stock almacenado, ubicarlas en Rack o Piso
+            guardado.
+          </p>
           {unitsToLocate.some((u) => !u.hasContent) && (
             <p className="mb-4 flex items-start gap-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -289,7 +294,8 @@ export function LocationSection({
           <p className="mb-4 mt-1 text-sm text-muted-foreground">
             Resultantes de clasificación, procesamiento o fraccionamiento. Se
             mueven como unidad logística completa desde piso ingreso hacia
-            almacenamiento final (rack o piso guardado).
+            almacenamiento final (rack o piso guardado). Hasta ubicarlas, no
+            cuentan como stock almacenado ni para estadía.
           </p>
           {readyLogisticUnits.length === 0 ? (
             <p className="text-sm text-muted-foreground">

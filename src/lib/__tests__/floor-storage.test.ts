@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   FINAL_STORAGE_POSITION_TYPES,
+  VISIBLE_POSITION_TYPES,
+  buildFloorZoneCode,
   floorZonePrimaryLabel,
   isFinalStoragePosition,
   isFloorStorageCode,
@@ -10,6 +12,7 @@ import {
   positionPrimaryLabel,
   positionSelectLabel,
 } from "@/lib/constants";
+import { positionSchema } from "@/lib/validation/position";
 
 describe("floor storage positions", () => {
   it("trata floor_temporary como almacenamiento final", () => {
@@ -73,5 +76,27 @@ describe("floor storage positions", () => {
       primary: "Piso guardado",
       secondary: "04",
     });
+  });
+
+  it("expone Piso guardado en tipos visibles de alta", () => {
+    expect(VISIBLE_POSITION_TYPES.some((t) => t.value === "floor_temporary")).toBe(
+      true
+    );
+    expect(
+      VISIBLE_POSITION_TYPES.find((t) => t.value === "floor_temporary")?.label
+    ).toBe("Piso guardado");
+  });
+
+  it("valida alta de posición floor_temporary con código FLOOR-STORAGE-XX", () => {
+    const parsed = positionSchema.parse({
+      type: "floor_temporary",
+      zone_number: "3",
+      capacity_notes: "",
+      occupancy_notes: "",
+    });
+
+    expect(parsed.type).toBe("floor_temporary");
+    expect(parsed.code).toBe("FLOOR-STORAGE-03");
+    expect(buildFloorZoneCode("floor_temporary", 3)).toBe("FLOOR-STORAGE-03");
   });
 });

@@ -19,7 +19,8 @@ import {
   POSITION_LEVELS,
   SIDE_LABELS,
   LEVEL_LABELS,
-  OPERATIONAL_FLOOR_TYPES,
+  OPERATIONAL_TRANSIT_FLOOR_TYPES,
+  mapFloorZoneDisplay,
 } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import { orDash } from "@/lib/format";
@@ -46,7 +47,7 @@ import { BlockToggleButton } from "./_components/block-toggle-button";
 
 export const dynamic = "force-dynamic";
 
-type ViewKey = "fisicas" | "operativas" | "todas";
+type ViewKey = "fisicas" | "piso_guardado" | "operativas" | "todas";
 
 type SearchParams = {
   q?: string;
@@ -61,7 +62,8 @@ type SearchParams = {
 };
 
 const VIEW_TABS: { key: ViewKey; label: string }[] = [
-  { key: "fisicas", label: "Posiciones físicas" },
+  { key: "fisicas", label: "Racks" },
+  { key: "piso_guardado", label: "Piso guardado" },
   { key: "operativas", label: "Zonas operativas" },
   { key: "todas", label: "Todas" },
 ];
@@ -78,10 +80,13 @@ export default async function PosicionesPage({
   const cliente = (searchParams.cliente ?? "").trim();
   const estado = (searchParams.estado ?? "").trim();
   const vista: ViewKey =
-    searchParams.vista === "operativas" || searchParams.vista === "todas"
+    searchParams.vista === "operativas" ||
+    searchParams.vista === "piso_guardado" ||
+    searchParams.vista === "todas"
       ? searchParams.vista
       : "fisicas";
   const isRackView = vista === "fisicas";
+  const isFloorStorageView = vista === "piso_guardado";
   const isZoneView = vista === "operativas";
 
   const profile = await getCurrentProfile();
@@ -99,7 +104,8 @@ export default async function PosicionesPage({
   // Por default mostramos solo posiciones físicas (rack). Las zonas operativas
   // viven en su propia vista para no mezclarse con las posiciones del cliente.
   if (isRackView) query = query.eq("type", "rack");
-  if (isZoneView) query = query.in("type", OPERATIONAL_FLOOR_TYPES);
+  if (isFloorStorageView) query = query.eq("type", "floor_temporary");
+  if (isZoneView) query = query.in("type", OPERATIONAL_TRANSIT_FLOOR_TYPES);
   if (q) query = query.ilike("code", `%${q}%`);
   // Los filtros de rack solo aplican a la vista de posiciones físicas.
   if (!isZoneView) {
@@ -133,12 +139,16 @@ export default async function PosicionesPage({
   };
 
   const countLabel = isRackView
-    ? "posiciones físicas"
+    ? "racks"
+    : isFloorStorageView
+    ? "posiciones de piso guardado"
     : isZoneView
     ? "zonas operativas"
     : "posiciones";
 
-  const emptyDescription = isZoneView
+  const emptyDescription = isFloorStorageView
+    ? "Todavía no hay posiciones de piso guardado. Creá una desde Nueva posición (tipo Piso guardado)."
+    : isZoneView
     ? "No hay zonas operativas cargadas. Deberían existir por default (piso ingreso, retiro y revisión)."
     : isRackView
     ? "Todavía no hay posiciones físicas creadas. Creá posiciones manualmente o generá posiciones por columna/lado/nivel."
@@ -319,12 +329,79 @@ export default async function PosicionesPage({
               title={
                 hasFilters
                   ? "Sin resultados"
+                  : isFloorStorageView
+                  ? "Sin posiciones de piso guardado"
                   : isZoneView
                   ? "Sin zonas operativas"
                   : "Todavía no hay posiciones físicas creadas"
               }
               description={hasFilters ? "Probá ajustar los filtros." : emptyDescription}
             />
+          ) : isFloorStorageView ? (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Piso guardado</TableHead>
+                  <TableHead>Zona</TableHead>
+                  <TableHead>Código interno</TableHead>
+                  <TableHead>Estado</TableHead>
+                  <TableHead className="text-right">Acciones</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {positions.map((p) => {
+                  const display = mapFloorZoneDisplay(p.type, p.code);
+                  return (
+                    <TableRow key={p.id}>
+                      <TableCell>
+                        <Link
+                          href={`/posiciones/${p.id}`}
+                          className="font-medium hover:underline"
+                        >
+                          {display.primary}
+                        </Link>
+                        <p className="text-xs text-muted-foreground">
+                          Almacenamiento final
+                        </p>
+                      </TableCell>
+                      <TableCell>{display.secondary}</TableCell>
+                      <TableCell className="font-mono text-xs text-muted-foreground">
+                        {p.code}
+                      </TableCell>
+                      <TableCell>
+                        <PositionStatusBadge status={p.status} />
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center justify-end gap-1">
+                          <Link
+                            href={`/posiciones/${p.id}`}
+                            className={buttonVariants({ variant: "outline" })}
+                            aria-label="Ver ficha"
+                            title="Ver ficha"
+                          >
+                            <Eye className="h-4 w-4" />
+                            <span>Ver ficha</span>
+                          </Link>
+                          {staff && (
+                            <Link
+                              href={`/posiciones/${p.id}/editar`}
+                              className={buttonVariants({
+                                variant: "ghost",
+                                size: "icon",
+                              })}
+                              aria-label="Editar"
+                              title="Editar"
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Link>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
           ) : isZoneView ? (
             <Table>
               <TableHeader>

@@ -51,7 +51,7 @@ export default async function NuevaPosicionPage({
     <>
       <PageHeader
         title="Nueva posición"
-        description="Crear una posición de rack o de piso"
+        description="Crear una posición de rack, piso guardado o zona operativa"
       />
       <PositionForm
         action={createPositionAction}

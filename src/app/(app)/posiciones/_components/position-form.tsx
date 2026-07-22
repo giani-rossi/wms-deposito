@@ -16,6 +16,7 @@ import {
   VISIBLE_POSITION_TYPES,
   buildRackCode,
   buildFloorZoneCode,
+  isFinalStoragePosition,
 } from "@/lib/constants";
 import { floorZoneNumberFromCode } from "@/lib/validation/position";
 import { Label } from "@/components/ui/label";
@@ -78,6 +79,7 @@ export function PositionForm({
   );
 
   const isRack = type === "rack";
+  const isFloorStorage = isFinalStoragePosition(type) && type !== "rack";
 
   return (
     <form action={formAction} className="space-y-6">
@@ -189,7 +191,9 @@ export function PositionForm({
                 </Badge>
               </div>
               <p className="text-xs text-muted-foreground">
-                Las zonas operativas usan códigos controlados (sin texto libre).
+                {isFloorStorage
+                  ? "Almacenamiento final en piso. La mercadería ubicada aquí cuenta para estadía."
+                  : "Las zonas operativas usan códigos controlados (sin texto libre)."}
               </p>
             </>
           )}

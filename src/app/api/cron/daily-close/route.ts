@@ -22,10 +22,30 @@ export async function GET(request: Request) {
   }
 
   const date = todayInArgentina();
+  const startedAt = Date.now();
 
   try {
     const supabase = createAdminClient();
     const result = await generateDailyOccupancySnapshot(supabase, date);
+
+    const logPayload = {
+      source: "cron",
+      date: result.date,
+      ok: result.ok,
+      durationMs: Date.now() - startedAt,
+      rowsWritten: result.ok ? result.rowsWritten : undefined,
+      rowsDeleted: result.ok ? result.rowsDeleted : undefined,
+      occupiedPositions: result.ok ? result.occupiedPositions : undefined,
+      mixedPositions: result.ok ? result.mixedPositions : undefined,
+      diagnostics: result.diagnostics,
+      error: result.ok ? undefined : result.error,
+    };
+
+    if (result.ok) {
+      console.log("[daily-close/cron]", JSON.stringify(logPayload));
+    } else {
+      console.error("[daily-close/cron]", JSON.stringify(logPayload));
+    }
 
     if (!result.ok) {
       return NextResponse.json(
@@ -33,6 +53,7 @@ export async function GET(request: Request) {
           ok: false,
           date: result.date,
           error: result.error,
+          diagnostics: result.diagnostics,
         },
         { status: 500 }
       );
@@ -45,10 +66,21 @@ export async function GET(request: Request) {
       rowsDeleted: result.rowsDeleted,
       occupiedPositions: result.occupiedPositions,
       mixedPositions: result.mixedPositions,
+      diagnostics: result.diagnostics,
       source: "cron",
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Error inesperado";
+    console.error(
+      "[daily-close/cron]",
+      JSON.stringify({
+        source: "cron",
+        date,
+        ok: false,
+        durationMs: Date.now() - startedAt,
+        error: message,
+      })
+    );
     return NextResponse.json(
       { ok: false, date, error: message },
       { status: 500 }

@@ -9,6 +9,15 @@ import {
   distinctOccupiedPositions,
 } from "@/lib/daily-close/aggregate-snapshot";
 
+export type DailyCloseSnapshotDiagnostics = {
+  storagePositionsCount: number;
+  locatedUnitsCount: number;
+  aggregatedRowsCount: number;
+  /** ULs con status=located pero fuera de rack / piso guardado (zonas operativas, etc.). */
+  locatedUnitsOutsideFinalStorage: number;
+  storagePositionTypes: readonly string[];
+};
+
 export type GenerateDailyOccupancySnapshotResult =
   | {
       ok: true;
@@ -17,14 +26,42 @@ export type GenerateDailyOccupancySnapshotResult =
       rowsDeleted: number;
       occupiedPositions: number;
       mixedPositions: number;
+      diagnostics: DailyCloseSnapshotDiagnostics;
     }
   | {
       ok: false;
       date: string;
       error: string;
+      diagnostics?: DailyCloseSnapshotDiagnostics;
     };
 
 type Supabase = SupabaseClient<Database>;
+
+function buildDiagnostics(
+  storagePositions: { id: string }[],
+  units: { current_position_id: string | null }[],
+  aggregatedRowsCount: number
+): DailyCloseSnapshotDiagnostics {
+  const storagePositionIds = new Set(storagePositions.map((p) => p.id));
+  let locatedUnitsOutsideFinalStorage = 0;
+
+  for (const unit of units) {
+    if (
+      unit.current_position_id &&
+      !storagePositionIds.has(unit.current_position_id)
+    ) {
+      locatedUnitsOutsideFinalStorage += 1;
+    }
+  }
+
+  return {
+    storagePositionsCount: storagePositions.length,
+    locatedUnitsCount: units.length,
+    aggregatedRowsCount,
+    locatedUnitsOutsideFinalStorage,
+    storagePositionTypes: FINAL_STORAGE_POSITION_TYPES,
+  };
+}
 
 /**
  * Genera (o regenera) el snapshot diario de ocupación por posición para estadía.
@@ -58,16 +95,31 @@ export async function generateDailyOccupancySnapshot(
         .not("current_position_id", "is", null),
     ]);
 
-  if (posErr) return { ok: false, date: closeDate, error: posErr.message };
-  if (unitsErr) return { ok: false, date: closeDate, error: unitsErr.message };
+  if (posErr) {
+    console.error("[daily-close] Supabase positions query failed:", posErr.message);
+    return { ok: false, date: closeDate, error: posErr.message };
+  }
+  if (unitsErr) {
+    console.error("[daily-close] Supabase logistic_units query failed:", unitsErr.message);
+    return { ok: false, date: closeDate, error: unitsErr.message };
+  }
+
+  const storagePositionsList = storagePositions ?? [];
+  const unitsList = units ?? [];
 
   const aggregated = aggregateOccupancySnapshot(
-    (storagePositions ?? []).map((p) => ({
+    storagePositionsList.map((p) => ({
       id: p.id,
       code: p.code,
       status: p.status as PositionStatus,
     })),
-    units ?? []
+    unitsList
+  );
+
+  const diagnostics = buildDiagnostics(
+    storagePositionsList,
+    unitsList,
+    aggregated.length
   );
 
   const rows = aggregated.map((r) => ({
@@ -90,7 +142,16 @@ export async function generateDailyOccupancySnapshot(
     .eq("date", closeDate);
 
   if (existingErr) {
-    return { ok: false, date: closeDate, error: existingErr.message };
+    console.error(
+      "[daily-close] Supabase daily_position_occupancy select failed:",
+      existingErr.message
+    );
+    return {
+      ok: false,
+      date: closeDate,
+      error: existingErr.message,
+      diagnostics,
+    };
   }
 
   const staleIds =
@@ -105,7 +166,16 @@ export async function generateDailyOccupancySnapshot(
       .delete()
       .in("id", staleIds);
     if (deleteErr) {
-      return { ok: false, date: closeDate, error: deleteErr.message };
+      console.error(
+        "[daily-close] Supabase daily_position_occupancy delete failed:",
+        deleteErr.message
+      );
+      return {
+        ok: false,
+        date: closeDate,
+        error: deleteErr.message,
+        diagnostics,
+      };
     }
     rowsDeleted = staleIds.length;
   }
@@ -118,6 +188,7 @@ export async function generateDailyOccupancySnapshot(
       rowsDeleted,
       occupiedPositions: 0,
       mixedPositions: 0,
+      diagnostics,
     };
   }
 
@@ -126,7 +197,16 @@ export async function generateDailyOccupancySnapshot(
     .upsert(rows, { onConflict: "date,client_id,position_id" });
 
   if (upsertErr) {
-    return { ok: false, date: closeDate, error: upsertErr.message };
+    console.error(
+      "[daily-close] Supabase daily_position_occupancy upsert failed:",
+      upsertErr.message
+    );
+    return {
+      ok: false,
+      date: closeDate,
+      error: upsertErr.message,
+      diagnostics,
+    };
   }
 
   return {
@@ -136,5 +216,6 @@ export async function generateDailyOccupancySnapshot(
     rowsDeleted,
     occupiedPositions,
     mixedPositions,
+    diagnostics,
   };
 }

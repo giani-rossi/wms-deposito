@@ -9,6 +9,7 @@ import {
   LOGISTIC_UNIT_TYPE_LABELS,
   OUTBOUND_ORDER_STATUS_LABELS,
   positionPrimaryLabel,
+  isFinalStoragePosition,
 } from "@/lib/constants";
 import { formatDate, formatDateTime, orDash } from "@/lib/format";
 import { PageHeader } from "@/components/layout/page-header";
@@ -215,7 +216,7 @@ export default async function OrdenRetiroFichaPage({
       ? posMap.get(unit.current_position_id)
       : null;
     if (unit.status === "located") {
-      return pos?.type === "rack";
+      return pos ? isFinalStoragePosition(pos.type) : false;
     }
     if (unit.status === "in_floor_outbound") {
       return pos?.code === FLOOR_OUTBOUND_CODE;

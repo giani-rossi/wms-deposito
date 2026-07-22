@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireProfile, isStaff } from "@/lib/auth";
+import { isFinalStoragePosition } from "@/lib/constants";
 import {
   classifyMoveDestination,
   moveDestinationOverrideRequiredMessage,
@@ -118,11 +119,18 @@ export async function moveLogisticUnitAction(
   if (!toPos) {
     return { ok: false, error: "Posición destino no encontrada." };
   }
-  if (toPos.type !== "rack") {
+  if (!isFinalStoragePosition(fromPos.type)) {
     return {
       ok: false,
       error:
-        "El movimiento interno solo permite destino en posiciones de rack. Las zonas de piso (ingreso, retiro, revisión) no están habilitadas.",
+        "Solo se pueden mover unidades desde rack o piso guardado.",
+    };
+  }
+  if (!isFinalStoragePosition(toPos.type)) {
+    return {
+      ok: false,
+      error:
+        "El movimiento interno solo permite destino en rack o piso guardado.",
     };
   }
 

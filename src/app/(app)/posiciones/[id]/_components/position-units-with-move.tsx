@@ -301,7 +301,7 @@ function MoveLogisticUnitModal({
         </p>
 
         <div className="space-y-2">
-          <Label htmlFor="move-dest">Posición destino (rack)</Label>
+          <Label htmlFor="move-dest">Posición destino (rack o piso guardado)</Label>
           <Select
             id="move-dest"
             value={destId}

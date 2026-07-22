@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireProfile, isStaff } from "@/lib/auth";
+import { isFinalStoragePosition } from "@/lib/constants";
 import type { OutboundOrderStatus } from "@/lib/types/database";
 import {
   createOutboundOrderSchema,
@@ -151,10 +152,11 @@ async function validateEligibleLogisticUnit(
   }
 
   if (unit.status === "located") {
-    if (!pos || pos.type !== "rack") {
+    if (!pos || !isFinalStoragePosition(pos.type)) {
       return {
         ok: false,
-        error: "La unidad ubicada debe estar en una posición de rack.",
+        error:
+          "La unidad ubicada debe estar en rack o piso guardado.",
       };
     }
   } else if (!pos || pos.code !== FLOOR_OUTBOUND_CODE) {

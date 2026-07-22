@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireProfile, isStaff } from "@/lib/auth";
 import { refreshInboundLocationStatus } from "@/lib/actions/inbound-location-status";
-import { BILLING_UNIT_BY_LOGISTIC_TYPE } from "@/lib/constants";
+import { BILLING_UNIT_BY_LOGISTIC_TYPE, isFinalStoragePosition } from "@/lib/constants";
 import { locateReadyLogisticUnitSchema } from "@/lib/validation/inbound";
 import type { PositionStatus } from "@/lib/types/database";
 
@@ -88,10 +88,10 @@ export async function locateReadyLogisticUnitAction(
   if (!pos) {
     return { ok: false, error: "Posición destino no encontrada." };
   }
-  if (pos.type !== "rack") {
+  if (!isFinalStoragePosition(pos.type)) {
     return {
       ok: false,
-      error: "El destino debe ser una posición de rack.",
+      error: "El destino debe ser una posición de rack o piso guardado.",
     };
   }
 

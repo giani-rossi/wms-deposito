@@ -30,6 +30,7 @@ import {
   positionPrimaryLabel,
   positionSelectLabel,
   isOperationalZoneCode,
+  shouldHideInternalPositionCode,
   formatReceivedUnitHeading,
   RECEIVED_UNIT_TYPE_LABELS,
   VISIBLE_CONTENT_STATUSES,
@@ -402,6 +403,9 @@ export function ReceivedUnitsSection({
 /** Celda de posición: label amigable + código secundario si es zona operativa. */
 function PositionCell({ code }: { code: string | null }) {
   if (!code) return <span>—</span>;
+  if (shouldHideInternalPositionCode(code)) {
+    return <span>{positionPrimaryLabel(code)}</span>;
+  }
   if (isOperationalZoneCode(code)) {
     return (
       <span className="flex flex-col">

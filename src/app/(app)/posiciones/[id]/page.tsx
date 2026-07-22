@@ -21,6 +21,8 @@ import {
   LEVEL_LABELS,
   describeRackPosition,
   positionPrimaryLabel,
+  isFinalStoragePosition,
+  FINAL_STORAGE_POSITION_TYPES,
 } from "@/lib/constants";
 import { formatDate, formatDateTime, orDash } from "@/lib/format";
 import { classifyMoveDestination } from "@/lib/movements/classify-move-destination";
@@ -102,7 +104,7 @@ export default async function PosicionFichaPage({
     supabase
       .from("positions")
       .select("id, code, type, status, assigned_client_id")
-      .eq("type", "rack")
+      .in("type", FINAL_STORAGE_POSITION_TYPES)
       .order("code"),
     supabase
       .from("logistic_units")
@@ -268,7 +270,7 @@ export default async function PosicionFichaPage({
       clientId: u.client_id,
       contentLines,
       canSplit:
-        position.type === "rack" &&
+        isFinalStoragePosition(position.type) &&
         u.status === "located" &&
         contentLines.length > 0,
     };

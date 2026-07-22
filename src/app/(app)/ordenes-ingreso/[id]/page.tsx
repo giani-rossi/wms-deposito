@@ -19,6 +19,7 @@ import {
   RECEIVED_UNIT_TYPE_LABELS,
   receivedUnitRequiresProcessing,
   positionPrimaryLabel,
+  isFinalStoragePosition,
 } from "@/lib/constants";
 import { formatDate, formatDateTime, orDash } from "@/lib/format";
 import {
@@ -674,12 +675,10 @@ export default async function OrdenIngresoFichaPage({
     )
   );
 
-  // Ubicación final = SOLO posiciones físicas de rack. Las zonas operativas
-  // (piso ingreso/retiro/revisión) son origen o ubicación temporal, nunca
-  // destino final de stock. Con metadatos para que el modal valide la
-  // situación (otro cliente / bloqueada / en revisión requieren override).
+  // Ubicación final = rack o piso guardado. Las zonas operativas de tránsito
+  // (ingreso/retiro/revisión) son origen o ubicación temporal, nunca destino final.
   const candidatePositions = (positions ?? [])
-    .filter((p) => p.type === "rack")
+    .filter((p) => isFinalStoragePosition(p.type))
     .map((p) => {
       const agg = posAgg.get(p.id);
       const assignedToClient = p.assigned_client_id === order.client_id;

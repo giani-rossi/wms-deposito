@@ -24,8 +24,11 @@ export type SplitLogisticUnitResult =
   | { ok: false; error: string };
 
 /**
- * Fracciona stock de una UL ubicada en rack hacia una UL hija en piso ingreso,
- * piso retiro o rack directo. Operación atómica vía RPC Postgres.
+ * Fracciona stock de una UL ubicada en rack o piso guardado hacia una UL hija en
+ * piso ingreso, piso retiro o rack directo. Operación atómica vía RPC Postgres.
+ *
+ * TODO: Permitir destino floor_temporary (FLOOR-STORAGE-XX) como almacenamiento
+ * final, igual que rack. Hoy el destino "rack" y el RPC validan solo type=rack.
  */
 export async function splitLogisticUnitAction(
   input: unknown
@@ -89,6 +92,7 @@ export async function splitLogisticUnitAction(
     ]);
 
     if (!targetPos || targetPos.type !== "rack") {
+      // TODO: aceptar floor_temporary (FLOOR-STORAGE-XX) como destino final.
       return {
         ok: false,
         error: "El destino debe ser una posición de rack.",

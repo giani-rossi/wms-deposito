@@ -8,6 +8,7 @@ import {
   buildRackCode,
   buildFloorZoneCode,
   isFloorZoneType,
+  FLOOR_ZONE_PREFIXES,
   RACK_CODE_REGEX,
   FLOOR_ZONE_CODE_REGEX,
 } from "@/lib/constants";
@@ -163,14 +164,10 @@ export const positionSchema = z
       }
       return;
     }
-    const expectedPrefix = {
-      floor_inbound: "FLOOR-INBOUND-",
-      floor_outbound: "FLOOR-OUTBOUND-",
-      floor_incident: "FLOOR-INCIDENT-",
-    }[val.type as string];
+    const expectedPrefix = FLOOR_ZONE_PREFIXES[val.type];
     if (
       !expectedPrefix ||
-      !val.code.startsWith(expectedPrefix) ||
+      !val.code.startsWith(`${expectedPrefix}-`) ||
       !FLOOR_ZONE_CODE_REGEX.test(val.code)
     ) {
       ctx.addIssue({

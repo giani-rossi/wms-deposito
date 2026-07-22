@@ -92,7 +92,7 @@ export const POSITION_TYPE_LABELS: Record<PositionType, string> = {
   floor_inbound: "Piso ingreso",
   floor_classification: "Piso clasificación",
   floor_assembly: "Piso armado",
-  floor_temporary: "Piso temporal",
+  floor_temporary: "Piso guardado",
   floor_outbound: "Piso retiro",
   floor_incident: "Revisión",
   floor_return: "Piso devoluciones",
@@ -388,7 +388,7 @@ export const FLOOR_POSITION_CODES = [
   "FLOOR-INBOUND-01",
   "FLOOR-CLASSIFICATION-01",
   "FLOOR-ASSEMBLY-01",
-  "FLOOR-TEMP-01",
+  "FLOOR-STORAGE-01",
   "FLOOR-OUTBOUND-01",
   "FLOOR-INCIDENT-01",
   "FLOOR-RETURN-01",
@@ -439,39 +439,132 @@ export const VISIBLE_POSITION_TYPES: {
   { value: "floor_incident", label: "Revisión" },
 ];
 
-/** Zonas operativas de piso que se muestran en el mapa (subconjunto). */
+/** Destinos finales de stock: rack o piso guardado (floor_temporary / FLOOR-STORAGE). */
+export const FINAL_STORAGE_POSITION_TYPES: PositionType[] = [
+  "rack",
+  "floor_temporary",
+];
+
+export function isFinalStoragePosition(
+  type: PositionType | string | null | undefined
+): boolean {
+  return type === "rack" || type === "floor_temporary";
+}
+
+/** Zonas operativas de piso visibles en mapa y listado (dinámico desde positions). */
 export const OPERATIONAL_FLOOR_TYPES: PositionType[] = [
+  "floor_inbound",
+  "floor_outbound",
+  "floor_incident",
+  "floor_temporary",
+];
+
+/** Zonas de tránsito operativo (no almacenamiento final). */
+export const OPERATIONAL_TRANSIT_FLOOR_TYPES: PositionType[] = [
   "floor_inbound",
   "floor_outbound",
   "floor_incident",
 ];
 
-/**
- * Labels amigables para los códigos de zonas operativas. En la UI mostramos
- * estos nombres como label principal y el código interno como texto secundario.
- */
-export const OPERATIONAL_ZONE_LABELS: Record<string, string> = {
-  "FLOOR-INBOUND-01": "Piso ingreso",
-  "FLOOR-OUTBOUND-01": "Piso retiro",
-  "FLOOR-INCIDENT-01": "Revisión",
-};
+export function isOperationalTransitFloorType(
+  type: PositionType | string | null | undefined
+): boolean {
+  return (
+    type === "floor_inbound" ||
+    type === "floor_outbound" ||
+    type === "floor_incident"
+  );
+}
 
-/** True si el código corresponde a una zona operativa de piso conocida. */
+export function isFloorStorageCode(code: string | null | undefined): boolean {
+  return !!code && /^FLOOR-STORAGE-\d{2}$/i.test(code.trim());
+}
+
+export function floorZoneNumberFromCode(code?: string | null): number | null {
+  const match = (code ?? "").trim().toUpperCase().match(/-(\d{2})$/);
+  if (!match) return null;
+  const n = Number.parseInt(match[1], 10);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Label amigable según tipo/código de zona de piso (sin depender de códigos fijos). */
+export function floorZonePrimaryLabel(
+  type: PositionType,
+  code?: string | null
+): string {
+  if (type === "floor_temporary" || isFloorStorageCode(code)) {
+    return "Piso guardado";
+  }
+  if (type === "floor_inbound") return "Piso ingreso";
+  if (type === "floor_outbound") return "Piso retiro";
+  if (type === "floor_incident") return "Revisión";
+  return POSITION_TYPE_LABELS[type] ?? code ?? "—";
+}
+
+/** True si la posición pertenece a una zona de piso controlada del mapa. */
+export function isMapFloorZonePosition(position: {
+  type: PositionType;
+  code: string | null;
+}): boolean {
+  if (!position.code) return false;
+  const code = position.code.toUpperCase();
+  if (!FLOOR_ZONE_CODE_REGEX.test(code)) return false;
+  const prefix = FLOOR_ZONE_PREFIXES[position.type];
+  if (!prefix) return false;
+  return code.startsWith(`${prefix}-`);
+}
+
+/** Texto para celdas del mapa de zonas operativas. */
+export function mapFloorZoneDisplay(
+  type: PositionType,
+  code: string | null
+): { primary: string; secondary: string } {
+  const primary = floorZonePrimaryLabel(type, code);
+  if (isFloorStorageCode(code)) {
+    const zone = floorZoneNumberFromCode(code);
+    return {
+      primary,
+      secondary: zone ? String(zone).padStart(2, "0") : "—",
+    };
+  }
+  return { primary, secondary: code ?? "—" };
+}
+
+/** True si el código corresponde a una zona operativa de piso controlada. */
 export function isOperationalZoneCode(code: string | null | undefined): boolean {
-  return !!code && code in OPERATIONAL_ZONE_LABELS;
+  if (!code) return false;
+  return FLOOR_ZONE_CODE_REGEX.test(code.toUpperCase());
+}
+
+/** En portal/UI cliente no mostrar códigos internos de piso guardado. */
+export function shouldHideInternalPositionCode(
+  code: string | null | undefined
+): boolean {
+  return isFloorStorageCode(code);
 }
 
 /** Label principal para una posición por código (amigable si es zona operativa). */
 export function positionPrimaryLabel(code: string | null | undefined): string {
   if (!code) return "—";
-  return OPERATIONAL_ZONE_LABELS[code] ?? code;
+  if (isFloorStorageCode(code)) return "Piso guardado";
+  const upper = code.toUpperCase();
+  if (upper.startsWith("FLOOR-INBOUND-")) return "Piso ingreso";
+  if (upper.startsWith("FLOOR-OUTBOUND-")) return "Piso retiro";
+  if (upper.startsWith("FLOOR-INCIDENT-")) return "Revisión";
+  return code;
 }
 
-/** Label para selects: "Piso ingreso (FLOOR-INBOUND-01)" o el código tal cual. */
+/** Label para selects: amigable + identificador cuando aplica. */
 export function positionSelectLabel(code: string | null | undefined): string {
   if (!code) return "—";
-  const friendly = OPERATIONAL_ZONE_LABELS[code];
-  return friendly ? `${friendly} (${code})` : code;
+  if (isFloorStorageCode(code)) {
+    const zone = floorZoneNumberFromCode(code);
+    return zone
+      ? `Piso guardado (${String(zone).padStart(2, "0")})`
+      : "Piso guardado";
+  }
+  const friendly = positionPrimaryLabel(code);
+  return friendly !== code ? `${friendly} (${code})` : code;
 }
 
 /**
@@ -482,6 +575,7 @@ export const FLOOR_ZONE_PREFIXES: Record<string, string> = {
   floor_inbound: "FLOOR-INBOUND",
   floor_outbound: "FLOOR-OUTBOUND",
   floor_incident: "FLOOR-INCIDENT",
+  floor_temporary: "FLOOR-STORAGE",
 };
 
 /** Números disponibles para zonas operativas (MVP: 01..10). */
@@ -492,7 +586,7 @@ export function isFloorZoneType(type: PositionType): boolean {
   return Object.prototype.hasOwnProperty.call(FLOOR_ZONE_PREFIXES, type);
 }
 
-/** Genera el código de una zona operativa: FLOOR-INBOUND-01, etc. */
+/** Genera el código de una zona operativa: FLOOR-INBOUND-01, FLOOR-STORAGE-01, etc. */
 export function buildFloorZoneCode(type: PositionType, n: number): string {
   const prefix = FLOOR_ZONE_PREFIXES[type];
   if (!prefix) return "";
@@ -500,7 +594,8 @@ export function buildFloorZoneCode(type: PositionType, n: number): string {
 }
 
 /** Regex que valida un código de zona operativa controlada. */
-export const FLOOR_ZONE_CODE_REGEX = /^FLOOR-(INBOUND|OUTBOUND|INCIDENT)-\d{2}$/;
+export const FLOOR_ZONE_CODE_REGEX =
+  /^FLOOR-(INBOUND|OUTBOUND|INCIDENT|STORAGE)-\d{2}$/;
 
 /** Regex que valida un código de rack: {A-K}-{IZQ|DER}-{PISO|1|2|3|4}. */
 export const RACK_CODE_REGEX = /^[A-K]-(IZQ|DER)-(PISO|[1-4])$/;

@@ -26,6 +26,7 @@ import {
   BILLING_UNIT_BY_TYPE,
   RECEIVED_UNIT_INDIVIDUAL_TYPES,
   buildReceivedUnitDisplayLabel,
+  isFinalStoragePosition,
 } from "@/lib/constants";
 import { extractRemittanceData, OcrError } from "@/lib/ocr/openai";
 import {
@@ -233,7 +234,7 @@ export async function closeInboundOrderAction(
   if (inReview.length > 0)
     reasons.push(`${inReview.length} unidad(es) en revisión`);
 
-  // Unidades logísticas ubicadas deben estar en posiciones físicas de rack.
+  // Unidades logísticas ubicadas deben estar en almacenamiento final (rack o piso guardado).
   const locatedLus = (lus ?? []).filter((l) => l.status === "located");
   const posIds = Array.from(
     new Set(
@@ -242,22 +243,22 @@ export async function closeInboundOrderAction(
         .filter((x): x is string => Boolean(x))
     )
   );
-  let rackTypeById = new Map<string, string>();
+  let positionTypeById = new Map<string, string>();
   if (posIds.length > 0) {
     const { data: pos } = await supabase
       .from("positions")
       .select("id, type")
       .in("id", posIds);
-    rackTypeById = new Map((pos ?? []).map((p) => [p.id, p.type]));
+    positionTypeById = new Map((pos ?? []).map((p) => [p.id, p.type]));
   }
-  const luNotInRack = locatedLus.filter(
+  const luNotInFinalStorage = locatedLus.filter(
     (l) =>
       !l.current_position_id ||
-      rackTypeById.get(l.current_position_id) !== "rack"
+      !isFinalStoragePosition(positionTypeById.get(l.current_position_id))
   );
-  if (luNotInRack.length > 0)
+  if (luNotInFinalStorage.length > 0)
     reasons.push(
-      `${luNotInRack.length} unidad(es) logística(s) fuera de posiciones de rack`
+      `${luNotInFinalStorage.length} unidad(es) logística(s) fuera de almacenamiento final (rack/piso guardado)`
     );
 
   if (reasons.length > 0 && !force) {
@@ -1258,10 +1259,16 @@ export async function locateReceivedUnitAction(
     // Validar la posición destino y su situación actual
     const { data: pos } = await supabase
       .from("positions")
-      .select("id, assigned_client_id, status")
+      .select("id, assigned_client_id, status, type")
       .eq("id", dest.position_id)
       .single();
     if (!pos) return { ok: false, error: "Posición destino no encontrada." };
+    if (!isFinalStoragePosition(pos.type)) {
+      return {
+        ok: false,
+        error: "El destino debe ser rack o piso guardado.",
+      };
+    }
 
     // Ocupantes actuales (unidades logísticas ubicadas) para detectar mezcla
     // de clientes aunque la posición no tenga asignación formal.

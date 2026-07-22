@@ -14,8 +14,8 @@ import {
   POSITION_SIDES,
   POSITION_LEVELS,
   POSITION_LEVELS_TOP_DOWN,
-  OPERATIONAL_FLOOR_TYPES,
-  FLOOR_ZONE_CODE_REGEX,
+  isMapFloorZonePosition,
+  mapFloorZoneDisplay,
   SIDE_LABELS,
   LEVEL_LABELS,
   buildRackCode,
@@ -57,11 +57,7 @@ export function WarehouseMap({
     return m;
   }, [positions]);
 
-  const floorPositions = positions.filter(
-    (p) =>
-      OPERATIONAL_FLOOR_TYPES.includes(p.type) &&
-      FLOOR_ZONE_CODE_REGEX.test((p.code ?? "").toUpperCase())
-  );
+  const floorPositions = positions.filter(isMapFloorZonePosition);
 
   const [colFilter, setColFilter] = useState("");
   const [sideFilter, setSideFilter] = useState("");
@@ -243,24 +239,27 @@ export function WarehouseMap({
           <CardContent className="space-y-3 pt-6">
             <h3 className="text-sm font-semibold">Zonas operativas de piso</h3>
             <div className="flex flex-wrap gap-2">
-              {floorPositions.map((p) => (
+              {floorPositions.map((p) => {
+                const display = mapFloorZoneDisplay(p.type, p.code);
+                return (
                 <button
                   key={p.id}
                   type="button"
                   onClick={() => setSelected(p)}
-                  title={`${POSITION_TYPE_LABELS[p.type]} · ${p.code}`}
+                  title={`${display.primary} · ${display.secondary}`}
                   className={cn(
                     "flex h-14 min-w-[9rem] flex-col items-center justify-center rounded-md px-3 text-xs font-semibold shadow-sm transition-all hover:ring-2 hover:ring-ring",
                     POSITION_STATUS_BG[p.status as PositionStatus],
                     !matchesExisting(p) && "opacity-25"
                   )}
                 >
-                  <span>{POSITION_TYPE_LABELS[p.type]}</span>
+                  <span>{display.primary}</span>
                   <span className="text-[10px] font-normal opacity-80">
-                    {p.code}
+                    {display.secondary}
                   </span>
                 </button>
-              ))}
+              );
+              })}
             </div>
           </CardContent>
         </Card>

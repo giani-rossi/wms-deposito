@@ -1,4 +1,4 @@
-import { POSITION_STATUS_LABELS } from "@/lib/constants";
+import { POSITION_STATUS_LABELS, positionSelectLabel } from "@/lib/constants";
 import type { PositionStatus } from "@/lib/types/database";
 
 export type MoveDestinationKind =
@@ -110,27 +110,29 @@ export function classifyMoveDestination(
       warningMessage = null;
   }
 
+  const displayCode = positionSelectLabel(position.code);
+
   let optionLabel: string;
   switch (kind) {
     case "assigned_same_client":
-      optionLabel = `${position.code} · ${statusLabel} · Asignada a ${
+      optionLabel = `${displayCode} · ${statusLabel} · Asignada a ${
         getClientName?.(unitClientId) ?? "este cliente"
       }`;
       break;
     case "unassigned_free":
-      optionLabel = `${position.code} · ${statusLabel} · Sin asignar`;
+      optionLabel = `${displayCode} · ${statusLabel} · Sin asignar`;
       break;
     case "same_client_occupied":
-      optionLabel = `${position.code} · ${statusLabel} · Mismo cliente`;
+      optionLabel = `${displayCode} · ${statusLabel} · Mismo cliente`;
       break;
     case "assigned_other_client":
-      optionLabel = `${position.code} · ${statusLabel} · Asignada a otro cliente`;
+      optionLabel = `${displayCode} · ${statusLabel} · Asignada a otro cliente`;
       break;
     case "occupied_other_client":
-      optionLabel = `${position.code} · ${statusLabel} · Otro cliente`;
+      optionLabel = `${displayCode} · ${statusLabel} · Otro cliente`;
       break;
     case "blocked_or_incident":
-      optionLabel = `${position.code} · ${statusLabel}`;
+      optionLabel = `${displayCode} · ${statusLabel}`;
       break;
   }
 

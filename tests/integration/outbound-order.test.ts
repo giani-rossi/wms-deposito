@@ -13,6 +13,7 @@ import {
   createOutboundOrder,
   deleteLogisticUnit,
   deleteOutboundOrder,
+  ensureFloorStoragePosition,
   getPositionId,
 } from "./helpers/fixtures";
 
@@ -182,6 +183,49 @@ describe.skipIf(!integrationEnabled)("outbound order RPC + reglas", () => {
       .eq("logistic_unit_id", fixture.unitId);
 
     expect(prepMoves).toBe(1);
+  });
+
+  it("prepare_outbound_order mueve UL de piso guardado a FLOOR-OUTBOUND-01", async () => {
+    await ensureFloorStoragePosition(admin, "FLOOR-STORAGE-01");
+    const fixture = await createLocatedUnit(admin, {
+      quantity: 4,
+      rackCode: "FLOOR-STORAGE-01",
+    });
+    cleanupUnits.push(fixture.unitId);
+    const orderId = await createOutboundOrder(admin, staffUserId);
+    cleanupOrders.push(orderId);
+    const floorId = await getPositionId(admin, "FLOOR-OUTBOUND-01");
+
+    await addUnitToOutboundOrder(admin, orderId, fixture.unitId, "pending");
+
+    const { error: prepErr } = await auth.rpc("prepare_outbound_order", {
+      p_order_id: orderId,
+      p_user_id: staffUserId,
+    });
+    expect(prepErr).toBeNull();
+
+    const { data: unit } = await admin
+      .from("logistic_units")
+      .select("status, current_position_id")
+      .eq("id", fixture.unitId)
+      .single();
+    expect(unit?.status).toBe("in_floor_outbound");
+    expect(unit?.current_position_id).toBe(floorId);
+
+    const { error: loadErr } = await auth.rpc("confirm_outbound_load", {
+      p_order_id: orderId,
+      p_user_id: staffUserId,
+    });
+    expect(loadErr).toBeNull();
+
+    const { data: unitAfterLoad } = await admin
+      .from("logistic_units")
+      .select("status, is_available, current_position_id")
+      .eq("id", fixture.unitId)
+      .single();
+    expect(unitAfterLoad?.status).toBe("exited");
+    expect(unitAfterLoad?.is_available).toBe(false);
+    expect(unitAfterLoad?.current_position_id).toBeNull();
   });
 
   it("prepare_outbound_order no mueve de nuevo una línea ya prepared", async () => {

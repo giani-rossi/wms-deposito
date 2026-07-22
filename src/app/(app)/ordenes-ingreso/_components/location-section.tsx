@@ -18,6 +18,7 @@ import {
   LOGISTIC_UNIT_TYPE_LABELS,
   POSITION_STATUS_LABELS,
   positionPrimaryLabel,
+  positionSelectLabel,
   formatReceivedUnitHeading,
 } from "@/lib/constants";
 import type {
@@ -287,7 +288,8 @@ export function LocationSection({
           </h3>
           <p className="mb-4 mt-1 text-sm text-muted-foreground">
             Resultantes de clasificación, procesamiento o fraccionamiento. Se
-            mueven como unidad logística completa desde piso ingreso hacia rack.
+            mueven como unidad logística completa desde piso ingreso hacia
+            almacenamiento final (rack o piso guardado).
           </p>
           {readyLogisticUnits.length === 0 ? (
             <p className="text-sm text-muted-foreground">
@@ -326,7 +328,7 @@ export function LocationSection({
                           onClick={() => setReadyTarget(lu)}
                         >
                           <MapPin className="h-4 w-4" />
-                          Ubicar en rack
+                          Ubicar en almacenamiento final
                         </Button>
                       </TableCell>
                     )}
@@ -364,8 +366,10 @@ export function LocationSection({
                     <TableCell className="text-right">
                       {l.quantity != null ? Number(l.quantity) : "—"}
                     </TableCell>
-                    <TableCell className="font-mono text-sm">
-                      {orDash(l.position_code)}
+                    <TableCell className="text-muted-foreground">
+                      {l.position_code
+                        ? positionPrimaryLabel(l.position_code)
+                        : "—"}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -378,8 +382,8 @@ export function LocationSection({
                 Posiciones usadas:
               </span>
               {usedPositions.map((p) => (
-                <Badge key={p} variant="secondary" className="font-mono">
-                  {p}
+                <Badge key={p} variant="secondary">
+                  {positionPrimaryLabel(p)}
                 </Badge>
               ))}
             </div>
@@ -453,7 +457,7 @@ function LocateModal({
       if (!pos) continue;
       if ((pos.otherClient || pos.blocked) && !r.override) {
         setError(
-          `La posición ${pos.code} requiere confirmar el override antes de ubicar.`
+          `La posición ${positionSelectLabel(pos.code)} requiere confirmar el override antes de ubicar.`
         );
         return;
       }
@@ -561,16 +565,7 @@ function LocateModal({
                     <option value="">Seleccionar…</option>
                     {candidatePositions.map((p) => (
                       <option key={p.id} value={p.id}>
-                        {p.code}
-                        {p.assignedToClient
-                          ? " (asignada)"
-                          : p.free
-                          ? " (libre)"
-                          : p.otherClient
-                          ? " (otro cliente)"
-                          : p.blocked
-                          ? ` (${POSITION_STATUS_LABELS[p.status]})`
-                          : ""}
+                        {formatCandidatePositionOption(p)}
                       </option>
                     ))}
                   </Select>
@@ -617,8 +612,8 @@ function LocateModal({
                   <div className="grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-3">
                     <span>
                       <span className="text-muted-foreground">Posición: </span>
-                      <span className="font-mono font-medium">
-                        {selected.code}
+                      <span className="font-medium">
+                        {positionSelectLabel(selected.code)}
                       </span>
                     </span>
                     <span>
@@ -748,6 +743,15 @@ function LocateModal({
   );
 }
 
+function formatCandidatePositionOption(p: CandidatePosition): string {
+  const label = positionSelectLabel(p.code);
+  if (p.assignedToClient) return `${label} (asignada)`;
+  if (p.free) return `${label} (libre)`;
+  if (p.otherClient) return `${label} (otro cliente)`;
+  if (p.blocked) return `${label} (${POSITION_STATUS_LABELS[p.status]})`;
+  return label;
+}
+
 function LocateReadyLogisticUnitModal({
   unit,
   candidatePositions,
@@ -789,7 +793,7 @@ function LocateReadyLogisticUnitModal({
 
   function onConfirm() {
     if (!unit || !positionId) {
-      setError("Elegí la posición destino en rack.");
+      setError("Elegí la posición destino de almacenamiento final.");
       return;
     }
     if (needsOverride && !override) {
@@ -852,12 +856,15 @@ function LocateReadyLogisticUnitModal({
         {candidatePositions.length === 0 && (
           <p className="flex items-center gap-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
             <AlertTriangle className="h-4 w-4" />
-            No hay posiciones de rack disponibles para este cliente.
+            No hay posiciones de almacenamiento final disponibles para este
+            cliente.
           </p>
         )}
 
         <div className="space-y-2">
-          <Label htmlFor="ready-lu-position">Posición destino (rack)</Label>
+          <Label htmlFor="ready-lu-position">
+            Posición destino (almacenamiento final)
+          </Label>
           <Select
             id="ready-lu-position"
             value={positionId}
@@ -870,16 +877,7 @@ function LocateReadyLogisticUnitModal({
             <option value="">Seleccionar…</option>
             {candidatePositions.map((p) => (
               <option key={p.id} value={p.id}>
-                {p.code}
-                {p.assignedToClient
-                  ? " (asignada)"
-                  : p.free
-                  ? " (libre)"
-                  : p.otherClient
-                  ? " (otro cliente)"
-                  : p.blocked
-                  ? ` (${POSITION_STATUS_LABELS[p.status]})`
-                  : ""}
+                {formatCandidatePositionOption(p)}
               </option>
             ))}
           </Select>

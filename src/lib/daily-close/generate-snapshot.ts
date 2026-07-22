@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/types/database";
 import { dailyCloseDateSchema } from "@/lib/validation/daily-close";
 import type { PositionStatus } from "@/lib/types/database";
+import { FINAL_STORAGE_POSITION_TYPES } from "@/lib/constants";
 import {
   aggregateOccupancySnapshot,
   countMixedPositions,
@@ -44,12 +45,12 @@ export async function generateDailyOccupancySnapshot(
   }
   const closeDate = parsed.data;
 
-  const [{ data: rackPositions, error: posErr }, { data: units, error: unitsErr }] =
+  const [{ data: storagePositions, error: posErr }, { data: units, error: unitsErr }] =
     await Promise.all([
       supabase
         .from("positions")
         .select("id, code, status")
-        .eq("type", "rack"),
+        .in("type", FINAL_STORAGE_POSITION_TYPES),
       supabase
         .from("logistic_units")
         .select("id, client_id, current_position_id")
@@ -61,7 +62,7 @@ export async function generateDailyOccupancySnapshot(
   if (unitsErr) return { ok: false, date: closeDate, error: unitsErr.message };
 
   const aggregated = aggregateOccupancySnapshot(
-    (rackPositions ?? []).map((p) => ({
+    (storagePositions ?? []).map((p) => ({
       id: p.id,
       code: p.code,
       status: p.status as PositionStatus,

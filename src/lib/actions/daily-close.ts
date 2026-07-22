@@ -12,7 +12,7 @@ export type GenerateDailyCloseResult = {
   rowsWritten?: number;
   rowsDeleted?: number;
   occupiedPositions?: number;
-  /** Posiciones rack con mercadería de más de un cliente (override / mezcla). */
+  /** Posiciones de almacenamiento final con mercadería de más de un cliente (override / mezcla). */
   mixedPositions?: number;
 };
 

@@ -167,8 +167,9 @@ export default async function CierreDiaPage({
           <CardContent className="space-y-4 pt-6">
             <h3 className="text-sm font-semibold">Cierre diario</h3>
             <p className="text-sm text-muted-foreground">
-              Este cierre registra las posiciones rack usadas por cliente para
-              calcular estadía mensual. No modifica stock ni movimientos.
+              Este cierre registra las posiciones de almacenamiento (rack y piso
+              guardado) usadas por cliente para calcular estadía mensual. No
+              modifica stock ni movimientos.
             </p>
 
             {lastCloseDate ? (
@@ -227,7 +228,7 @@ export default async function CierreDiaPage({
                 title="Sin cierre para esta fecha"
                 description={
                   staff
-                    ? "Elegí la fecha y generá el cierre del día para registrar las posiciones rack usadas por cada cliente."
+                    ? "Elegí la fecha y generá el cierre del día para registrar las posiciones de almacenamiento usadas por cada cliente."
                     : "Todavía no hay un cierre registrado para esta fecha."
                 }
               />
@@ -286,8 +287,8 @@ export default async function CierreDiaPage({
                 Resumen por cliente — {formatDate(fecha)}
               </h3>
               <p className="text-xs text-muted-foreground">
-                Cantidad de posiciones rack distintas usadas ese día (base para
-                facturar posición-día).
+                Cantidad de posiciones de almacenamiento distintas usadas ese día
+                (base para facturar posición-día).
               </p>
               <Table>
                 <TableHeader>
@@ -414,8 +415,8 @@ export default async function CierreDiaPage({
                   <div className="space-y-3 pt-2">
                     <h4 className="text-sm font-semibold">Detalle diario por cliente</h4>
                     <p className="text-xs text-muted-foreground">
-                      Posiciones rack distintas usadas cada día (según cierres
-                      generados).
+                      Posiciones de almacenamiento distintas usadas cada día
+                      (según cierres generados).
                     </p>
                     <Table>
                       <TableHeader>

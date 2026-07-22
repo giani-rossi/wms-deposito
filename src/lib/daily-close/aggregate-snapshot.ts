@@ -19,12 +19,12 @@ type LocatedUnit = {
   current_position_id: string | null;
 };
 
-/** Agrupa unidades ubicadas en racks por cliente + posición. */
+/** Agrupa unidades ubicadas en almacenamiento final por cliente + posición. */
 export function aggregateOccupancySnapshot(
-  rackPositions: RackPosition[],
+  storagePositions: RackPosition[],
   units: LocatedUnit[]
 ): OccupancySnapshotRow[] {
-  const posMap = new Map(rackPositions.map((p) => [p.id, p]));
+  const posMap = new Map(storagePositions.map((p) => [p.id, p]));
   const aggMap = new Map<string, OccupancySnapshotRow>();
 
   for (const row of units) {
@@ -50,7 +50,7 @@ export function aggregateOccupancySnapshot(
   return Array.from(aggMap.values());
 }
 
-/** Posiciones rack con más de un cliente en el snapshot (mezcla / override). */
+/** Posiciones de almacenamiento final con más de un cliente en el snapshot (mezcla / override). */
 export function countMixedPositions(rows: OccupancySnapshotRow[]): number {
   const clientsByPosition = new Map<string, Set<string>>();
   for (const row of rows) {

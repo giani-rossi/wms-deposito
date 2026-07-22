@@ -19,6 +19,27 @@ export async function getPositionId(
   return data.id;
 }
 
+/** Asegura una posición FLOOR-STORAGE-XX para tests de piso guardado. */
+export async function ensureFloorStoragePosition(
+  admin: ServiceClient,
+  code = "FLOOR-STORAGE-01"
+): Promise<string> {
+  const { data: existing } = await admin
+    .from("positions")
+    .select("id")
+    .eq("code", code)
+    .maybeSingle();
+  if (existing?.id) return existing.id;
+
+  const { data, error } = await admin
+    .from("positions")
+    .insert({ code, type: "floor_temporary", status: "free" })
+    .select("id")
+    .single();
+  if (error || !data) throw error ?? new Error(`No se pudo crear ${code}`);
+  return data.id;
+}
+
 export async function createLocatedUnit(
   admin: ServiceClient,
   opts: { quantity: number; rackCode?: string }
